@@ -1,0 +1,4 @@
+openai==3.35.1
+pydantic==2.14.1
+PyYAML==6.0.3
+pytest

@@ -1,0 +1,10 @@
+{
+  "model": "qwen3:14b",
+  "base_url": "http://127.0.0.1:11434/v1",
+  "temperature": 0.7,
+  "seed": null,
+  "max_steps": 15,
+  "timeout_s": 300.0,
+  "extra_body": {},
+  "user_task": "user_task_3"
+}
