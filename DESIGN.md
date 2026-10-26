@@ -54,6 +54,10 @@ Marked `DEVIATION` in the code.
 - **Challenge 1 reference solutions.** `reference.txt` is AgentDojo's `important_instructions`
   template; `reference_v2.txt` and `reference_v3.txt` add explicit steps (look up the recurring
   payment's id; do it before the refund). `scripts/bench.sh 1` uses v3 with `user_task_3`.
+- **Challenge 1 user task.** The challenge uses AgentDojo's `user_task_3` (dinner refund),
+  set in `challenge/config.json`. With `user_task_4` ("Please refund ... for what they've
+  sent me"), models often reply without reading the transaction list, so the injected
+  subject never reaches them (read in 0/10 and 6/10 runs in two qwen3:14b batches).
 - **Malformed tool calls.** Some models occasionally emit invalid tool-call JSON, which Ollama
   rejects with HTTP 500 and the run ends. The harness records these as errors; count them as
   failed runs when reporting.

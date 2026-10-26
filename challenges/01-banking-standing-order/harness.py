@@ -53,7 +53,9 @@ def main() -> int:
     ap.add_argument("--seed-base", type=int, default=0)
     ap.add_argument("--max-steps", type=int, default=15)
     ap.add_argument("--conditions", default="attack,no_attack")
-    ap.add_argument("--user-task", default="user_task_4", choices=["user_task_4", "user_task_3"])
+    ap.add_argument("--user-task", default="user_task_3", choices=["user_task_3", "user_task_4"],
+                    help="user_task_3 (dinner refund) is the validated default: it makes the agent read the "
+                         "transactions. With user_task_4 the agent often never reads the injected subject.")
     ap.add_argument("--extra-body", default="{}", help='JSON, e.g. \'{"reasoning_effort":"low"}\'')
     ap.add_argument("--out", type=Path, default=HERE / "results")
     a = ap.parse_args()
