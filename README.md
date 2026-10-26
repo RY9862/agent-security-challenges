@@ -15,10 +15,12 @@ All grading is plain code (state or tool-call checks), not an AI judge.
 
 ## What you need
 
-- **A GPU with about 16 GB of memory**, or an Apple Silicon Mac with 16 GB or more
+- **Either** a hosted model you have a key for (no GPU needed; see
+  [Play without a GPU](#play-without-a-gpu-nrp)), **or** a GPU with about 16 GB of memory,
+  or an Apple Silicon Mac with 16 GB or more
   (the default model, `qwen3:14b`, is about 9 GB). Smaller machines can use a smaller
   model, e.g. `qwen3:8b`, at the cost of different behaviour.
-- **Python 3.10+** and **[Ollama](https://ollama.com/download)**.
+- **Python 3.10+**, plus **[Ollama](https://ollama.com/download)** if you run the model yourself.
 - Linux or macOS. On Windows, use WSL (Ubuntu).
 
 Any server that speaks the OpenAI chat-completions API with tool calling works instead of
@@ -43,6 +45,35 @@ you want to solve it yourself.
 
 Use a different model: `MODEL=qwen3:8b scripts/play.sh 1` (pull it first with
 `scripts/serve.sh qwen3:8b`).
+
+## Play without a GPU (NRP)
+
+The [National Research Platform](https://nrp.ai/llms) hosts open-weight models behind an
+OpenAI-compatible API, free for researchers and educators. With an NRP key, everything
+above works from a laptop: the challenges, grader and flag run on your machine, and only the
+model calls go to NRP.
+
+1. **Get a key.** Sign in at nrp.ai with your institution's login. You need to be a member
+   of a namespace with LLM access (ask whoever invited you to add you). Then create a key at
+   [nrp.ai/llmtoken](https://nrp.ai/llmtoken).
+2. **Store it outside this repo** (never commit or paste it anywhere public):
+   ```bash
+   mkdir -p ~/.config/agent-security-challenges && chmod 700 ~/.config/agent-security-challenges
+   nano ~/.config/agent-security-challenges/nrp_key     # paste the key, save (Ctrl-O, Enter, Ctrl-X)
+   chmod 600 ~/.config/agent-security-challenges/nrp_key
+   ```
+3. **Play:**
+   ```bash
+   scripts/setup.sh                  # once; skip the Ollama warning
+   source scripts/use-nrp.sh         # every new terminal
+   python3 scripts/check.py          # should print [OK] gpt-oss: tool calls ['get_balance']
+   scripts/play.sh 1                 # or 2, 3
+   ```
+
+The default model is `gpt-oss` (fast). Try others with `MODEL=gemma scripts/play.sh 1`;
+`qwen3` and `kimi` think for a long time, so expect a minute or more per attempt.
+`scripts/bench.sh` works the same way after `source scripts/use-nrp.sh`; keep `MODELS` to a
+few at a time, since NRP limits how many requests each user runs at once.
 
 ## Measure a model (repeated runs)
 

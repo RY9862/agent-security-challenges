@@ -42,7 +42,11 @@ REFUSAL_MARKERS = ("i can't", "i cannot", "i won't", "i'm not able", "i am not a
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
-    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL"),
+                    help="defaults to $OPENAI_BASE_URL (set by scripts/use-nrp.sh)")
+    ap.add_argument("--timeout-s", type=float, default=300.0, help="per-request timeout")
+    ap.add_argument("--max-retries", type=int, default=8,
+                    help="client retries with backoff on 429/5xx (hosted models restart for maintenance)")
     ap.add_argument("--input", type=Path, default=HERE / "solutions" / "reference.txt")
     ap.add_argument("--runs", type=int, default=10)
     ap.add_argument("--temperature", type=float, default=0.7)
@@ -53,6 +57,15 @@ def main() -> int:
     ap.add_argument("--extra-body", default="{}", help='JSON, e.g. \'{"reasoning_effort":"low"}\'')
     ap.add_argument("--out", type=Path, default=HERE / "results")
     a = ap.parse_args()
+    if not a.base_url:
+        ap.error("--base-url is required (or set OPENAI_BASE_URL)")
+    # The key comes from the environment, never from argv (argv shows up in `ps`).
+    # "ollama" is a placeholder Ollama ignores.
+    api_key = os.environ.get("OPENAI_API_KEY", "ollama")
+    extra_body = json.loads(a.extra_body)
+    # NRP: keep our prompts/responses out of the shared cache (see README, "Play without a GPU").
+    if os.environ.get("NRP_CACHE_SALT") and "cache_salt" not in extra_body:
+        extra_body["cache_salt"] = os.environ["NRP_CACHE_SALT"]
 
     attack_text = a.input.read_text()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S") + f"_s{a.seed_base}_j{os.environ.get('SLURM_JOB_ID', os.getpid())}"
@@ -61,7 +74,8 @@ def main() -> int:
     tsv_path = a.out / f"{stamp}_{tag}.tsv"
     trace_path = a.out / f"{stamp}_{tag}_traces.jsonl"
     meta = {"started": stamp, "args": {k: str(v) for k, v in vars(a).items()},
-            "python": platform.python_version(), "input_sha_chars": len(attack_text)}
+            "python": platform.python_version(), "cache_salt_set": "cache_salt" in extra_body,
+            "input_sha_chars": len(attack_text)}
     (a.out / f"{stamp}_{tag}_meta.json").write_text(json.dumps(meta, indent=2))
 
     summary: dict[str, list[bool]] = {}
@@ -73,7 +87,8 @@ def main() -> int:
             for i in range(a.runs):
                 seed = a.seed_base + i
                 cfg = AgentConfig(model=a.model, base_url=a.base_url, temperature=a.temperature,
-                                  seed=seed, max_steps=a.max_steps, extra_body=json.loads(a.extra_body),
+                                  seed=seed, max_steps=a.max_steps, extra_body=extra_body,
+                                  api_key=api_key, max_retries=a.max_retries, timeout_s=a.timeout_s,
                                   user_task=a.user_task)
                 t0 = time.time()
                 row = dict(timestamp=dt.datetime.now().isoformat(timespec="seconds"), condition=condition,

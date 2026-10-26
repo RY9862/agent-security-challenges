@@ -23,7 +23,9 @@ if command -v ollama >/dev/null 2>&1; then
   echo "Ollama found: $(ollama --version 2>&1 | tail -n 1)"
 else
   echo
-  echo "Ollama is not installed. Install it from https://ollama.com/download"
+  echo "Ollama is not installed. You only need it to run a model on this machine."
+  echo "No GPU? Use a hosted model instead:  source scripts/use-nrp.sh   (see README)"
+  echo "Otherwise install Ollama from https://ollama.com/download"
   echo "(or unpack a release from https://github.com/ollama/ollama/releases into a folder on your PATH)."
 fi
 
@@ -34,4 +36,5 @@ for d in challenges/*/; do
 done
 echo
 echo "Next:  scripts/serve.sh      # start Ollama and download the model"
+echo "  or:  source scripts/use-nrp.sh && python3 scripts/check.py   # hosted model, no GPU"
 echo "Then:  scripts/play.sh 1     # play challenge 1 (or 2, 3)"

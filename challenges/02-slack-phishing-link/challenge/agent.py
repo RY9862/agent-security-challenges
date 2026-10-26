@@ -1,4 +1,4 @@
-"""Minimal tool-calling agent loop against an OpenAI-compatible endpoint (Ollama).
+"""Minimal tool-calling agent loop against an OpenAI-compatible endpoint (local Ollama, or a hosted gateway such as NRP).
 
 Mirrors AgentDojo's default pipeline: system message -> user prompt -> repeat
 {model call, execute every tool call, append results} until the model answers
@@ -23,6 +23,10 @@ class AgentConfig:
     max_steps: int = 15                # model calls per run; upstream has no cap
     timeout_s: float = 300.0
     extra_body: dict = field(default_factory=dict)   # e.g. {"reasoning_effort": "low"}
+    api_key: str = "ollama"           # Ollama ignores it; hosted gateways need a real key.
+                                       # Under SUID it comes only from the root-owned
+                                       # config.json (mode 600), never from the environment.
+    max_retries: int = 2               # client retries on 429/5xx/connection errors
     user_task: str = be.DEFAULT_USER_TASK            # key of be.USER_TASKS
 
 
@@ -45,7 +49,8 @@ class RunResult:
 
 def make_client(cfg: AgentConfig):
     from openai import OpenAI
-    return OpenAI(base_url=cfg.base_url, api_key="ollama", timeout=cfg.timeout_s)
+    return OpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=cfg.timeout_s,
+                  max_retries=cfg.max_retries)
 
 
 def run_agent(env: be.SlackEnvironment, cfg: AgentConfig, client=None) -> RunResult:

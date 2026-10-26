@@ -7,6 +7,7 @@
 # Environment:
 #   MODEL      model name            (default qwen3:14b)
 #   BASE_URL   OpenAI-compatible URL (default http://$OLLAMA_HOST/v1, i.e. local Ollama)
+#   OPENAI_API_KEY  key for a hosted gateway (set by: source scripts/use-nrp.sh)
 set -eu
 N="${1:-}"
 MODEL="${MODEL:-qwen3:14b}"
@@ -27,11 +28,18 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cp -r "$DIR/challenge" "$WORK/challenge"
 
+umask 077   # the scratch config may hold an API key
 python3 - "$WORK/challenge/config.json" "$MODEL" "$BASE_URL" <<'PY'
-import json, sys
+import json, os, sys
 path, model, base_url = sys.argv[1:4]
 cfg = json.load(open(path))
 cfg.update(model=model, base_url=base_url, seed=None)   # unseeded, like a real attempt
+if os.environ.get("OPENAI_API_KEY"):        # hosted gateway (key from the environment, never argv)
+    cfg.update(api_key=os.environ["OPENAI_API_KEY"], max_retries=8)
+if os.environ.get("NRP_CACHE_SALT"):
+    cfg.setdefault("extra_body", {})["cache_salt"] = os.environ["NRP_CACHE_SALT"]
+if model in ("kimi", "qwen3", "qwen3-small", "glm-5", "deepseek-v4-flash", "minimax"):
+    cfg["timeout_s"] = 900.0                 # always-thinking hosted models are slow
 json.dump(cfg, open(path, "w"), indent=2)
 PY
 

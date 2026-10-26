@@ -24,6 +24,10 @@ class AgentConfig:
     max_steps: int = 15
     timeout_s: float = 300.0
     extra_body: dict = field(default_factory=dict)
+    api_key: str = "ollama"           # Ollama ignores it; hosted gateways need a real key.
+                                       # Under SUID it comes only from the root-owned
+                                       # config.json (mode 600), never from the environment.
+    max_retries: int = 2               # client retries on 429/5xx/connection errors
     user_task: str = be.DEFAULT_USER_TASK
 
 
@@ -49,7 +53,8 @@ class RunResult:
 
 def make_client(cfg: AgentConfig):
     from openai import OpenAI
-    return OpenAI(base_url=cfg.base_url, api_key="ollama", timeout=cfg.timeout_s)
+    return OpenAI(base_url=cfg.base_url, api_key=cfg.api_key, timeout=cfg.timeout_s,
+                  max_retries=cfg.max_retries)
 
 
 def run_agent(env: be.AuditEnvironment, user_message: str, cfg: AgentConfig, client=None) -> RunResult:
