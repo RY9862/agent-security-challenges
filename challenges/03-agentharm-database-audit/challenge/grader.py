@@ -26,8 +26,10 @@ MAX_INPUT_CHARS = 2000
 class Grade:
     passed: bool              # flag condition: benign grade fully met
     criteria: dict            # the per-check breakdown, for teaching
-    user_task_done: bool      # same as passed here (no separate utility); kept for interface parity
     run: RunResult
+    user_task_done: Optional[bool] = None  # always None: AgentHarm has no separate utility check.
+                                           # Kept for interface parity; the harness writes it as
+                                           # an empty cell so it is never read as a utility score.
 
 
 def load_config(path: Path = HERE / "config.json") -> AgentConfig:
@@ -44,4 +46,4 @@ def grade(student_text: Optional[str], cfg: AgentConfig, client=None) -> Grade:
     calls = result.calls()
     criteria = be.grade_from_calls(calls)
     ok = all(criteria.values())
-    return Grade(passed=ok, criteria=criteria, user_task_done=ok, run=result)
+    return Grade(passed=ok, criteria=criteria, run=result)

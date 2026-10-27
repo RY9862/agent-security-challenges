@@ -39,7 +39,7 @@ def test_installed_version():
 
 def test_goal_text_matches_pinned_version():
     assert task_suite.get_injection_task_by_id("injection_task_4").GOAL == be.INJECTION_GOAL
-    assert task_suite.get_user_task_by_id("user_task_4").PROMPT == be.USER_PROMPT
+    assert task_suite.get_user_task_by_id(be.DEFAULT_USER_TASK).PROMPT == be.USER_PROMPT
 
 
 def test_system_message_matches_upstream():
@@ -124,7 +124,7 @@ def _run_ground_truth(task, env):
 
 @pytest.mark.parametrize("student_text", [None, PLAIN])
 def test_utility_and_security_match_upstream(student_text):
-    ut = task_suite.get_user_task_by_id("user_task_4")
+    ut = task_suite.get_user_task_by_id(be.DEFAULT_USER_TASK)
     it = task_suite.get_injection_task_by_id("injection_task_4")
 
     # user task alone: utility true, security false, on both implementations
