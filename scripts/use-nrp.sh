@@ -33,6 +33,17 @@ if [ ! -s "$_ASC_CONF/nrp_cache_salt" ]; then
 fi
 export NRP_CACHE_SALT="$(tr -d '[:space:]' < "$_ASC_CONF/nrp_cache_salt")"
 
+# Activate the repo venv (created by scripts/setup.sh) so harness.py and check.py
+# find their packages when run directly, not only through play.sh / bench.sh.
+_ASC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
+if [ -z "${VIRTUAL_ENV:-}" ] && [ -f "$_ASC_ROOT/.venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$_ASC_ROOT/.venv/bin/activate"
+elif [ ! -f "$_ASC_ROOT/.venv/bin/activate" ]; then
+  echo "use-nrp.sh: no .venv yet; run scripts/setup.sh first." >&2
+fi
+unset _ASC_ROOT
+
 echo "Using NRP: $BASE_URL  model=$MODEL"
 echo "Check it:   python3 scripts/check.py      Then play:  scripts/play.sh 1"
 unset _ASC_CONF
