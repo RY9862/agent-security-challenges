@@ -52,12 +52,12 @@ The [National Research Platform](https://nrp.ai/llms) hosts open models behind a
 OpenAI-compatible API. The challenge, grader and flag all run on your computer and only
 the model calls go to NRP.
 
-1. Log in at nrp.ai with your school account. You need to be in a namespace that has LLM
+1. Log in at nrp.ai with your registered account. You need to be in a namespace that has LLM
    access. Then make a key at [nrp.ai/llmtoken](https://nrp.ai/llmtoken).
 2. Save the key outside the repo:
    ```bash
    mkdir -p ~/.config/agent-security-challenges && chmod 700 ~/.config/agent-security-challenges
-   nano ~/.config/agent-security-challenges/nrp_key     # paste key, Ctrl-O, Enter, Ctrl-X
+   nano ~/.config/agent-security-challenges/nrp_key     # paste the key
    chmod 600 ~/.config/agent-security-challenges/nrp_key
    ```
 3. Run:
