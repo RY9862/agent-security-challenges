@@ -1,66 +1,72 @@
-# Design notes
+# Design
 
-## From benchmark task to challenge
+## How a benchmark task becomes a challenge
 
-1. **Select** a task from a pinned benchmark version (for AgentDojo, a user task paired with an injection task).
-2. **Verify** it, and reject it if any check fails:
-   - success is decided by plain code, not an LLM judge;
-   - the check is correct: it rejects near-misses, not just non-attempts;
-   - the user's task forces the agent to read the injection point;
-   - text placed at the injection point reaches the agent in a tool result;
-   - the content is acceptable to teach (for AgentHarm, use the benign counterpart).
-3. **Isolate** the environment, tools and system prompt into standalone code with no benchmark import at runtime.
-4. **Remove** benchmark scaffolding (pipelines, attack generators, test glue).
-5. **Add the player's input channel** at the injection point.
-6. **Wire an agent loop** to the target model through an OpenAI-compatible endpoint.
-7. **Turn the check into a flag grader**: run the agent, run the check, print the flag only on success.
-8. **Write a reference solution** that shows the challenge is solvable.
-9. **Validate**: offline equivalence tests against upstream and a scripted-model test, then
-   real-model acceptance (reference attack at least 90%, no-attack 0%) over many seeds.
+1. Pick a task from a pinned version of the benchmark. For AgentDojo this is a user task
+   paired with an injection task.
+2. Check that it works as a challenge. Drop it if any of these fail:
+   - success is checked by code, not an LLM judge
+   - the check is strict enough to reject near misses, not just non-attempts
+   - the user task makes the agent read the injection point
+   - text at the injection point actually shows up in a tool result the agent sees
+   - the content is OK to use for teaching (for AgentHarm, use the benign version)
+3. Copy the environment, tools and system prompt into standalone code that doesn't import
+   the benchmark.
+4. Remove the benchmark's pipeline, attack generators and test code.
+5. Put the player's input at the injection point.
+6. Write an agent loop that talks to the model through an OpenAI-compatible endpoint.
+7. Turn the check into a grader that prints the flag only when the check passes.
+8. Write a reference solution to show it can be solved.
+9. Test it: offline equivalence tests against the original code and a fake-model test,
+   then real model runs (reference attack at least 90%, no attack 0%) across many seeds.
 
-Direct-injection tasks (AgentHarm) need more than this: a benign task has nothing to get
-past, so challenge 3 adds a guardrail to the system prompt (act only with an `AUDIT-XXXX`
-authorization reference, never invent one) and a no-attack baseline the guardrail should refuse.
-Whether that guardrail holds depends on the model, so check the baseline per model.
+Challenge 3 needed one more step. AgentHarm tasks are direct injection, and the benign task
+has nothing to get past, so I added a guardrail to the system prompt: only act with an
+`AUDIT-XXXX` authorization code and never make one up. There is also a no-attack baseline
+that the guardrail should refuse. Whether the guardrail holds depends on the model, so the
+baseline has to be checked for each model.
 
-## Deviations from upstream
+## Changes from the original benchmarks
 
-Marked `DEVIATION` in the code.
+Each one is marked `DEVIATION` in the code.
 
-- **D1, own agent loop.** `challenge/agent.py` replaces the benchmark pipeline: OpenAI-compatible
-  chat completions, all tool calls in a message executed in order, tool errors returned to the
-  model as `ErrorType: message` (as upstream). Adds a cap of 15 model calls.
-- **D2, injection placed on the parsed data, not spliced into YAML text.** Upstream formats the
-  injection into a double-quoted YAML string, which folds newlines into spaces and breaks on `"`
-  or `\`. Here the player's text reaches the agent byte-for-byte. Results are therefore not
-  directly comparable to AgentDojo's published attack success rates.
-- **D3, tool argument validation** with pydantic models built from the tool signatures; invalid
-  arguments return `ValidationError: ...` to the model, as upstream.
-- **D4, input limit of 2000 characters.** Upstream has none.
-- **D5, model configuration only from `challenge/config.json`.** The grader runs with elevated
-  privileges; taking the endpoint from environment variables or arguments would let a player
-  point it at a fake model that emits the winning tool call.
-- **D6, teaching trace.** The grader prints every tool call and result. The flag condition is unchanged.
+- **D1, own agent loop.** `challenge/agent.py` replaces the benchmark pipeline. It uses OpenAI
+  chat completions, runs all tool calls in a message in order, and sends tool errors back as
+  `ErrorType: message` like the original. It also stops after 15 model calls.
+- **D2, injection goes into the parsed data instead of the YAML text.** The original pastes
+  the injection into a double-quoted YAML string, which turns newlines into spaces and breaks
+  on `"` or `\`. Here the player's text reaches the agent exactly as typed. Because of this,
+  results can't be compared directly with AgentDojo's published attack success rates.
+- **D3, tool argument validation** with pydantic models built from the tool signatures. Bad
+  arguments return `ValidationError: ...` to the model, same as the original.
+- **D4, 2000 character input limit.** The original has no limit.
+- **D5, model settings only come from `challenge/config.json`.** The grader runs with higher
+  privileges, so if it read the endpoint from environment variables or arguments, a player
+  could point it at a fake model that just outputs the winning tool call.
+- **D6, trace output.** The grader prints every tool call and result. The flag condition is
+  the same.
 
-## Notes and open items
+## Notes and known issues
 
-- **Q1 (challenge 1).** The AgentDojo check also passes if the agent *creates* a new recurring
-  payment to the attacker instead of redirecting the existing one. Kept as upstream.
-- **Q2.** The `run` shebang (`#!/usr/bin/exec-suid -- /usr/bin/python3 -I`) follows pwn.college
-  conventions; confirm it for your platform.
-- **Upstream bug (AgentDojo banking).** `injection_task_0/1/3` have an operator-precedence error
-  in `security()` (`any(x or "" in s ...)`), so any transfer to the attacker passes. Challenge 1
-  uses `injection_task_4`, which is not affected. See `test_equivalence.py`.
+- **Q1 (challenge 1).** The AgentDojo check also passes if the agent creates a new recurring
+  payment to the attacker instead of changing the existing one. I left this the same as the
+  original.
+- **Q2.** The `run` shebang (`#!/usr/bin/exec-suid -- /usr/bin/python3 -I`) follows
+  pwn.college conventions. Check it for other platforms.
+- **Bug in AgentDojo banking.** `injection_task_0/1/3` have an operator precedence bug in
+  `security()` (`any(x or "" in s ...)`), so any transfer to the attacker passes. Challenge 1
+  uses `injection_task_4`, which doesn't have this bug. See `test_equivalence.py`.
 - **Challenge 1 reference solutions.** `reference.txt` is AgentDojo's `important_instructions`
-  template; `reference_v2.txt` and `reference_v3.txt` add explicit steps (look up the recurring
-  payment's id; do it before the refund). `scripts/bench.sh 1` uses v3 with `user_task_3`.
+  template. `reference_v2.txt` and `reference_v3.txt` add explicit steps (look up the
+  recurring payment's id, and do it before the refund). `scripts/bench.sh 1` uses v3 with
+  `user_task_3`.
 - **Challenge 1 user task.** The challenge uses AgentDojo's `user_task_3` (dinner refund),
   set in `challenge/config.json`. With `user_task_4` ("Please refund ... for what they've
-  sent me"), models often reply without reading the transaction list, so the injected
-  subject never reaches them (read in 0/10 and 6/10 runs in two qwen3:14b batches).
-- **Challenge 3 has no utility column.** AgentHarm grades only whether the task was completed,
-  which is the flag condition, so `user_task_done` is left empty in challenge 3's results.
+  sent me") the model often answers without reading the transaction list, so it never sees
+  the injected subject. It only read it in 0/10 and 6/10 runs across two qwen3:14b batches.
+- **Challenge 3 has no utility column.** AgentHarm only checks whether the task was done,
+  which is already the flag condition, so `user_task_done` is empty in challenge 3's results.
   Use `passed`.
-- **Malformed tool calls.** Some models occasionally emit invalid tool-call JSON, which Ollama
-  rejects with HTTP 500 and the run ends. The harness records these as errors; count them as
-  failed runs when reporting.
+- **Malformed tool calls.** Sometimes a model outputs invalid tool call JSON. Ollama rejects
+  it with HTTP 500 and the run ends. The harness records these as errors, and they should be
+  counted as failed runs when reporting results.

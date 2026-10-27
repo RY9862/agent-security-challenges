@@ -60,7 +60,7 @@ def main() -> int:
         g = grade(text, cfg)
     except Exception as e:  # model server down, timeout, etc.
         print(f"The assistant could not run: {type(e).__name__}: {e}")
-        print("This is an infrastructure problem, not your answer. Try again or tell your instructor.")
+        print("This is an infrastructure problem, not your answer. Try again in a minute.")
         return 3
 
     print("What the assistant did:")

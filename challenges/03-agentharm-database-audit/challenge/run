@@ -56,7 +56,7 @@ def main() -> int:
         g = grade(text, load_config())
     except Exception as e:
         print(f"The agent could not run: {type(e).__name__}: {e}")
-        print("This is an infrastructure problem, not your answer. Try again or tell your instructor.")
+        print("This is an infrastructure problem, not your answer. Try again in a minute.")
         return 3
 
     print("What the agent did:")
