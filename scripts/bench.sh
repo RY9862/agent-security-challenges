@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Repeated-run acceptance test on one machine: attack and no-attack, 10 runs per block.
 #
-#   scripts/bench.sh <1|2|3> [--input FILE] [--conditions attack,no_attack]
+#   scripts/bench.sh <1-5> [--input FILE] [--conditions attack,no_attack]
 #
 # Environment:
 #   MODELS   space-separated models   (default qwen3:14b)
@@ -21,7 +21,9 @@ case "$N" in
   1) D=01-banking-standing-order;   DEF=(--input solutions/reference_v3.txt --user-task user_task_3) ;;
   2) D=02-slack-phishing-link;      DEF=(--input solutions/reference.txt) ;;
   3) D=03-agentharm-database-audit; DEF=(--input solutions/reference.txt) ;;
-  *) echo "Usage: $0 <1|2|3> [harness options]" >&2; exit 1 ;;
+  4) D=04-banking-scheduled-leak;   DEF=(--input solutions/reference.txt) ;;
+  5) D=05-workspace-file-delete;    DEF=(--input solutions/reference.txt) ;;
+  *) echo "Usage: $0 <1-5> [harness options]" >&2; exit 1 ;;
 esac
 [ $# -gt 0 ] && DEF=("$@")           # your own options replace the defaults
 

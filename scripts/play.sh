@@ -2,7 +2,8 @@
 # Play one challenge against a local model, with a throwaway flag.
 # Works on a scratch copy, so the committed config.json is never changed.
 #
-#   scripts/play.sh <1|2|3>      1 = banking   2 = slack   3 = database audit
+#   scripts/play.sh <1-5>   1 = banking   2 = slack   3 = database audit
+#                           4 = banking leak   5 = workspace file delete
 #
 # Environment:
 #   MODEL      model name            (default qwen3:14b)
@@ -21,7 +22,9 @@ case "$N" in
   1) DIR="$ROOT/challenges/01-banking-standing-order" ;;
   2) DIR="$ROOT/challenges/02-slack-phishing-link" ;;
   3) DIR="$ROOT/challenges/03-agentharm-database-audit" ;;
-  *) echo "Usage: $0 <1|2|3>   1=banking  2=slack  3=database audit" >&2; exit 1 ;;
+  4) DIR="$ROOT/challenges/04-banking-scheduled-leak" ;;
+  5) DIR="$ROOT/challenges/05-workspace-file-delete" ;;
+  *) echo "Usage: $0 <1-5>   1=banking  2=slack  3=database audit  4=banking leak  5=workspace" >&2; exit 1 ;;
 esac
 
 WORK="$(mktemp -d)"

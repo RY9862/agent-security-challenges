@@ -1,6 +1,6 @@
 #!/bin/bash
 # Example Slurm job for clusters. Fill in the placeholders for your site, then:
-#   sbatch scripts/cluster/bench.sbatch <1|2|3> <model> <seed-base>
+#   sbatch scripts/cluster/bench.sbatch <1-5> <model> <seed-base>
 #SBATCH --job-name=agent-ctf-bench
 #SBATCH --partition=YOUR_PARTITION
 #SBATCH --account=YOUR_ACCOUNT

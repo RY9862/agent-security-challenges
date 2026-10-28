@@ -4,8 +4,8 @@ Some code and data in this repo come from the projects below. Check their licens
 before redistributing.
 
 - **AgentDojo** (ETH Zurich SPY Lab), https://github.com/ethz-spylab/agentdojo,
-  version 0.1.35 (commit `089ed468`), benchmark v1.2.2. Used in challenges 01 and 02 for the
-  environment models, tools and docstrings, environment and injection vector YAML, system
+  version 0.1.35 (commit `089ed468`), benchmark v1.2.2. Used in challenges 01, 02, 04 and 05 for
+  the environment models, tools and docstrings, environment and injection vector YAML, system
   message, and the `utility()` / `security()` checks.
   Debenedetti et al., "AgentDojo: A Dynamic Environment to Evaluate Prompt Injection
   Attacks and Defenses for LLM Agents", NeurIPS 2024 Datasets and Benchmarks.

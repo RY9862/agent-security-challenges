@@ -29,4 +29,4 @@ curl -s --max-time 1800 "http://$HOST/api/generate" \
   -d "{\"model\":\"$MODEL\",\"prompt\":\"hi\",\"stream\":false}" >/dev/null
 ollama ps
 echo
-echo "Ready. Play with:  MODEL=$MODEL scripts/play.sh <1|2|3>"
+echo "Ready. Play with:  MODEL=$MODEL scripts/play.sh <1-5>"

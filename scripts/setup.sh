@@ -37,4 +37,4 @@ done
 echo
 echo "Next:  scripts/serve.sh      # start Ollama and download the model"
 echo "  or:  source scripts/use-nrp.sh && python3 scripts/check.py   # hosted model, no GPU"
-echo "Then:  scripts/play.sh 1     # play challenge 1 (or 2, 3)"
+echo "Then:  scripts/play.sh 1     # play challenge 1 (or 2-5)"

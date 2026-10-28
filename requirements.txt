@@ -1,4 +1,5 @@
 openai==3.35.1
 pydantic==2.14.1
 PyYAML==6.0.3
+email-validator==2.3.0   # workspace models (challenge 05) use pydantic EmailStr
 pytest
