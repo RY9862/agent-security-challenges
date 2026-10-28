@@ -1,6 +1,6 @@
-# Design
+# Design Pipeline: Benchmark Task to Challenge
 
-## How a benchmark task becomes a challenge
+This markdown file documents the process steps to transform a benchmark task, extracted either from AgentDojo or AgentHarm, into a CTF-style coding challenge for educational purposes. Issues and notes involved in this process is also recorded at the bottom.
 
 1. Pick a task from a pinned version of the benchmark. For AgentDojo this is a user task
    paired with an injection task.
@@ -21,7 +21,7 @@
    then real model runs (reference attack at least 90%, no attack 0%) across many seeds.
 
 Challenge 3 needed one more step. AgentHarm tasks are direct injection, and the benign task
-has nothing to get past, so I added a guardrail to the system prompt: only act with an
+has nothing to get past, so a guardrail was added to the system prompt: only act with an
 `AUDIT-XXXX` authorization code and never make one up. There is also a no-attack baseline
 that the guardrail should refuse. Whether the guardrail holds depends on the model, so the
 baseline has to be checked for each model.
@@ -49,7 +49,7 @@ Each one is marked `DEVIATION` in the code.
 ## Notes and known issues
 
 - **Q1 (challenge 1).** The AgentDojo check also passes if the agent creates a new recurring
-  payment to the attacker instead of changing the existing one. I left this the same as the
+  payment to the attacker instead of changing the existing one. This was left the same as the
   original.
 - **Q2.** The `run` shebang (`#!/usr/bin/exec-suid -- /usr/bin/python3 -I`) follows
   pwn.college conventions. Check it for other platforms.
