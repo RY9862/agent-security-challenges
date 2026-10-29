@@ -1,6 +1,6 @@
 # Agent prompt injection challenges
 
-Five CTF challenges where you attack an AI agent that uses tools. Each one is built from a
+CTF challenges where you attack an AI agent that uses tools. Each one is built from a
 task in a published agent security benchmark (AgentDojo or AgentHarm) and runs against a real
 language model. You give an input, the agent does its job with its tools, and a grader checks
 what actually happened. You only get the flag if your input changed what the agent did.
@@ -20,7 +20,7 @@ Grading is done in code by checking tool calls or the final state. There is no L
 - Python 3.10 or newer
 - Linux or macOS (on Windows use WSL)
 - A model to run against. Either:
-  - an NRP key (no GPU needed, see below), or
+  - [Preferred] an NRP key (no GPU needed, see below), or
   - Ollama on a machine with about 16 GB of GPU memory, or an Apple Silicon Mac with 16 GB+.
     The default model is `qwen3:14b` (about 9 GB). `qwen3:8b` works on smaller machines but
     behaves differently.
@@ -94,9 +94,9 @@ and stops if a model is missing.
 
 ```bash
 scripts/bench.sh 2                                  # gpt-oss, 10 attack + 10 no-attack runs (seeds 0-9)
-MODELS="gpt-oss gemma" scripts/bench.sh 2           # two models, one after the other
+MODELS="gpt-oss gemma" scripts/bench.sh 2           # Two models, one after the other
 SEEDS="0 10 20 30 40 50" scripts/bench.sh 2         # 60 attack + 60 no-attack runs
-scripts/bench.sh 3 --conditions no_attack           # only the no-attack runs
+scripts/bench.sh 3 --conditions no_attack           # Only the no-attack runs
 ```
 
 Each block of 10 seeds writes a log to `logs/` and prints a PASS/FAIL line for each condition.
