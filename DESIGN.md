@@ -374,7 +374,7 @@ bench.sh connets to reference text v3 in as the default:
   1) D=01-banking-standing-order;   DEF=(--input solutions/reference_v3.txt --user-task user_task_3) ;;
 ```
 
-**Note**: The references were tuned against qwen3:14b on a local GPU, different from the default model for the NRP platform (`gpt-oss`). References may need to be benchmark tested across multiple seeds for it to be refined against `gpt-oss` or any of the other models on NRP. 
+**Note**: The references were tuned against `qwen3:14b` on a local GPU, different from the default model for the NRP platform (`gpt-oss`). References may need to be benchmark tested across multiple seeds for it to be refined against `gpt-oss` or any of the other models on NRP. 
 
 ## Step 9: Test it
 
