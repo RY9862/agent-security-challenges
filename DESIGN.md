@@ -1,10 +1,21 @@
 # Design Pipeline: Benchmark Task to Challenge
 
-This markdown file documents the process steps to transform a benchmark task, extracted either from AgentDojo or AgentHarm, into a CTF-style coding challenge for educational purposes.  A thorough explanation for each step will be given, alongside an accompanying example in the form of transforming Challenge 1, an indirect injection banking challenge adapted from AgentDojo. Deviations from the original AgentDojo / AgentHarm environments as well as issues encountered during transformation is also recorded at the bottom of this document.
+This file documents the process steps to transform a benchmark task, extracted either from AgentDojo or AgentHarm, into a CTF-style coding challenge for educational purposes.  A thorough explanation for each step will be given, alongside an accompanying example in the form of transforming Challenge 1, an indirect injection banking challenge adapted from AgentDojo. Deviations from the original AgentDojo / AgentHarm environments as well as issues encountered during transformation is also recorded at the bottom of this document.
 
 All challenges are assumed to be using models hosted externally on the National Research Platform (NRP). As of currently, a NRP API key is required to run the challenges.
 
-## Step 1: Pick a task from a pinned version of the benchmark
+## Steps at a first glance
+1. Pick a task from a pinned version of the selected benchmark
+2. Check the task's viability as a challenge
+3. Copy environment, tools and system prompt into standalone code
+4. Remove the benchmark's pipeline, attack generators and test code
+5. Put the player's input at the injection point
+6. Write an new agent loop
+7. Turn the check into a flag grader
+8. Write a reference solution to prove it can be solved
+9. Test the challenge through benchmarks
+
+## Step 1: Pick a task from a pinned version of the selected benchmark
 
 Varying depending on the source being AgentDojo or AgentHarm. For our example of Challenge 1, it is adapted from AgentDojo's paired tasks of one user task and one indirect injection task, both specifically from the banking suite.
 
@@ -367,7 +378,7 @@ Signed,
 Emma Johnson
 </INFORMATION>
 ```
-bench.sh connets to reference text v3 in as the default:
+bench.sh connects to reference text v3 in as the default:
 
 ```bash
 # scripts/bench.sh, line 21
@@ -376,11 +387,11 @@ bench.sh connets to reference text v3 in as the default:
 
 **Note**: The references were tuned against `qwen3:14b` on a local GPU, different from the default model for the NRP platform (`gpt-oss`). References may need to be benchmark tested across multiple seeds for it to be refined against `gpt-oss` or any of the other models on NRP. 
 
-## Step 9: Test it
+## Step 9: Test the challenge through benchmarks
 
 Involves first running offline equivalence tests against the original code and a fake-model test, then real model runs across many seeds. Full testing process is still under development, but baseline acceptance rate should be having reference attacks succeed at least 90% of the runs, while no-attack runs succeed 0% of the time. 
 
-## Step 0.5: AgentHarm challenges
+## Step 9.5: For AgentHarm challenges only
 Due to the nature of AgentHarm tasks being direct injections, and as the benign task has nothing to get past, so a guardrail was added to the system prompt: only act with an `AUDIT-XXXX` authorization code and never fabricate one. There is also a no-attack baseline that the guardrail should refuse. Whether the guardrail holds depends on the model, so the
 baseline has to be checked for each model.
 
