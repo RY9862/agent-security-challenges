@@ -8,6 +8,7 @@ without tool calls. Tool errors are returned to the model as text, as upstream.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -45,6 +46,8 @@ class RunResult:
     trace: list[Step]
     steps_used: int
     hit_step_limit: bool
+    call_seconds: list[float] = field(default_factory=list)   # wall time of each model call
+    served_model: str = ""                                   # model id the server reported
 
 
 def make_client(cfg: AgentConfig):
@@ -62,6 +65,8 @@ def run_agent(env: be.WorkspaceEnvironment, cfg: AgentConfig, client=None) -> Ru
     ]
     trace: list[Step] = []
     final = ""
+    call_seconds: list[float] = []
+    served = ""
 
     for step in range(1, cfg.max_steps + 1):
         kwargs = dict(model=cfg.model, messages=messages, tools=tools, temperature=cfg.temperature)
@@ -69,7 +74,11 @@ def run_agent(env: be.WorkspaceEnvironment, cfg: AgentConfig, client=None) -> Ru
             kwargs["seed"] = cfg.seed
         if cfg.extra_body:
             kwargs["extra_body"] = cfg.extra_body
-        msg = client.chat.completions.create(**kwargs).choices[0].message
+        t0 = time.perf_counter()
+        resp = client.chat.completions.create(**kwargs)
+        call_seconds.append(round(time.perf_counter() - t0, 2))
+        served = getattr(resp, "model", "") or served
+        msg = resp.choices[0].message
 
         calls = msg.tool_calls or []
         assistant: dict = {"role": "assistant", "content": msg.content or ""}
@@ -85,7 +94,7 @@ def run_agent(env: be.WorkspaceEnvironment, cfg: AgentConfig, client=None) -> Ru
         final = msg.content or ""
 
         if not calls:
-            return RunResult(final, trace, step, False)
+            return RunResult(final, trace, step, False, call_seconds, served)
 
         for c in calls:
             try:
@@ -100,7 +109,7 @@ def run_agent(env: be.WorkspaceEnvironment, cfg: AgentConfig, client=None) -> Ru
             trace.append(Step("tool_result", name=c.function.name, content=out, error=err))
             messages.append({"role": "tool", "tool_call_id": c.id, "content": err or out})
 
-    return RunResult(final, trace, cfg.max_steps, True)
+    return RunResult(final, trace, cfg.max_steps, True, call_seconds, served)
 
 
 def format_trace(result: RunResult, max_result_chars: int = 600) -> str:

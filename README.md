@@ -118,6 +118,26 @@ This pools every run for that challenge into flags, refusals and errors per mode
 condition. Raw results are in `challenges/<challenge>/results/`: a `.tsv` with one row per
 run, a `_traces.jsonl` with every tool call, and a `_meta.json` with the settings used.
 
+### Testing every model at once
+
+`scripts/sweep.sh` runs one challenge's reference attack on every NRP model that can call
+tools: 10 runs per model, then 50 more. It deletes that challenge's old results first.
+
+```bash
+scripts/sweep.sh 1                                  # all models, 10 then 50 runs, attack only
+MODELS="gpt-oss gemma" scripts/sweep.sh 1           # only these models
+CONDITIONS="attack no_attack" scripts/sweep.sh 1    # also the no-attack runs (twice as long)
+```
+
+Each phase gets a folder, `challenges/<challenge>/results/runs-10/` and `runs-50/`, with:
+
+- `report.md`: one table of flags, errors, time per run and model calls per run, and one table
+  of time per model call (median, mean, 90th percentile, range), one row per model
+- `summary.tsv`: the same numbers, to paste into Google Sheets
+- the raw `.tsv`, `_traces.jsonl` and `logs/<model>.log` for each model
+
+To rebuild a report from those files: `python3 scripts/stats.py challenges/01-banking-standing-order/results/runs-10`.
+
 ### What counts as working
 
 A challenge works on a model if the reference attack gets the flag in at least 90% of runs and
