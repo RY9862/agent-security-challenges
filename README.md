@@ -120,16 +120,23 @@ run, a `_traces.jsonl` with every tool call, and a `_meta.json` with the setting
 
 ### Testing every model at once
 
-`scripts/sweep.sh` runs one challenge's reference attack on every NRP model that can call
-tools: 10 runs per model, then 50 more. It deletes that challenge's old results first.
+`scripts/sweep.sh` runs the reference attack on every NRP model that can call tools: 10 runs per
+model, then 50 more. It deletes the old results of the challenges it runs first.
 
 ```bash
-scripts/sweep.sh 1                                  # all models, 10 then 50 runs, attack only
-MODELS="gpt-oss gemma" scripts/sweep.sh 1           # only these models
-CONDITIONS="attack no_attack" scripts/sweep.sh 1    # also the no-attack runs (twice as long)
+scripts/sweep.sh 1                                  # challenge 1, all models, 10 then 50 runs
+scripts/sweep.sh 1 4 5                              # several challenges
+scripts/sweep.sh all                                # all five challenges
+MODELS="gpt-oss gemma" scripts/sweep.sh all         # only these models
+RUNS=10 scripts/sweep.sh all                        # only the 10-run phase
+CONDITIONS="attack no_attack" scripts/sweep.sh 3    # also the no-attack runs (twice as long)
 ```
 
-Each phase gets a folder, `challenges/<challenge>/results/runs-10/` and `runs-50/`, with:
+With several challenges, the 10-run phase finishes for every challenge before any 50-run phase
+starts. For challenge 3, include `no_attack` at least once, since that's how you see whether
+the guardrail holds.
+
+Each challenge gets `results/runs-10/` and `results/runs-50/`, with:
 
 - `report.md`: one table of flags, errors, time per run and model calls per run, and one table
   of time per model call (median, mean, 90th percentile, range), one row per model
