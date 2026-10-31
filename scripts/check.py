@@ -27,8 +27,10 @@ def main() -> int:
     host = os.environ.get("OLLAMA_HOST", "127.0.0.1:11434").removeprefix("http://")
     base_url = os.environ.get("BASE_URL") or f"http://{host}/v1"
     models = sys.argv[1:] or [os.environ.get("MODEL", "qwen3:14b")]
+    # CHECK_TIMEOUT_S: seconds per attempt (sweep.sh sets it low so a dead model is skipped fast)
+    timeout = float(os.environ.get("CHECK_TIMEOUT_S", 900))
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-                    max_retries=3, timeout=900)
+                    max_retries=3 if timeout >= 900 else 1, timeout=timeout)
     print(f"Server: {base_url}")
 
     try:

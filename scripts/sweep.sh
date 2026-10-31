@@ -42,11 +42,14 @@ for n in "$@"; do challenge_dir "$n" >/dev/null || { echo "$USAGE" >&2; exit 1; 
 CHALLENGES="$*"
 
 if [ -z "${BASE_URL:-}" ]; then
+  _MODELS="${MODELS:-}"   # use-nrp.sh defaults MODELS to gpt-oss; keep "all models" as the default here
   # shellcheck disable=SC1091
   source "$ROOT/scripts/use-nrp.sh" >/dev/null || exit 1
+  MODELS="$_MODELS"
 fi
 [ -z "${VIRTUAL_ENV:-}" ] && [ -f "$ROOT/.venv/bin/activate" ] && source "$ROOT/.venv/bin/activate"
 RUNS="${RUNS:-10 50}"
+export CHECK_TIMEOUT_S="${CHECK_TIMEOUT_S:-90}"   # skip models that do not answer the tool check
 CONDITIONS="${CONDITIONS:-attack}"
 
 for n in $CHALLENGES; do

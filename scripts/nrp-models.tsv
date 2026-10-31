@@ -1,0 +1,19 @@
+# NRP model names used for sweeps, checked 2026-10-31 against https://ellm.nrp-nautilus.io/v1.
+# served_model is what the server reported answering under that name; several names share one model.
+# Left out: gemma and qwen3-small (archived on nrp.ai/llm-status), gemma-vl (no answer),
+# qwen3-embedding (embedding model, no tool calls).
+#   MODELS="$(grep -v '^#' scripts/nrp-models.tsv | cut -f1 | tail -n +2)" RUNS=3 scripts/sweep.sh 1 2
+name	served_model
+deepseek-v4-flash	deepseek-ai/DeepSeek-V4.1-Flash-1017
+service	deepseek-ai/DeepSeek-V4.1-Flash-1017
+gemma-small	google/gemma-4-12B-it-qat-w4a16-ct
+gemma4-12b	google/gemma-4-12B-it-qat-w4a16-ct
+gemma4-small	google/gemma-4-12B-it-qat-w4a16-ct
+gemma-small-e4b	google/gemma-4-E4B-it
+glm-5	Inferact/GLM-5.3-NVFP4
+gpt-oss	openai/gpt-oss-120b
+kimi	moonshotai/Kimi-K2.7-Code
+minimax	MiniMaxAI/MiniMax-M3.1-Flash
+minimax-m2	MiniMaxAI/MiniMax-M3.1-Flash
+qwen3	Qwen/Qwen3.8-Flash-Next-FP8
+qwen3-vl	Qwen/Qwen3.8-Flash-Next-FP8
