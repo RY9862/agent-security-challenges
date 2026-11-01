@@ -99,7 +99,9 @@ SEEDS="0 10 20 30 40 50" scripts/bench.sh 2         # 60 attack + 60 no-attack r
 scripts/bench.sh 3 --conditions no_attack           # Only the no-attack runs
 ```
 
-Each block of 10 seeds writes a log to `logs/` and prints a PASS/FAIL line for each condition.
+Each benchmark gets its own folder, `evals/<date>-<time>-bench-ch<N>/` (set `EVAL=<name>` to
+choose the name, or to add to an existing folder). Each block of 10 seeds writes a log to its
+`logs/` and prints a PASS/FAIL line for each condition.
 Runs go one at a time, so a benchmark only has one request open on NRP at once. Don't start
 several `bench.sh` at the same time, because NRP limits how many requests each user can run
 at once and the extra ones fail.
@@ -111,17 +113,19 @@ your partition and account).
 ### 3. Summarize
 
 ```bash
-python3 scripts/summarize.py challenges/02-slack-phishing-link
+python3 scripts/summarize.py evals/2026-10-31-1430-bench-ch2
 ```
 
-This pools every run for that challenge into flags, refusals and errors per model and
-condition. Raw results are in `challenges/<challenge>/results/`: a `.tsv` with one row per
+This pools every run in that folder into flags, refusals and errors per model and
+condition. The benchmark also writes `report.md` and `summary.tsv` at the top of its folder.
+Raw results are in `evals/<name>/<challenge>/`: a `.tsv` with one row per
 run, a `_traces.jsonl` with every tool call, and a `_meta.json` with the settings used.
 
 ### Testing every model at once
 
 `scripts/sweep.sh` runs the reference attack on every NRP model that can call tools: 10 runs per
-model, then 50 more. It deletes the old results of the challenges it runs first.
+model, then 50 more. Each sweep gets its own folder, `evals/<date>-<time>-sweep-ch<challenges>/`,
+so it never touches earlier results.
 
 ```bash
 scripts/sweep.sh 1                                  # challenge 1, all models, 10 then 50 runs
@@ -130,20 +134,27 @@ scripts/sweep.sh all                                # all five challenges
 MODELS="gpt-oss gemma" scripts/sweep.sh all         # only these models
 RUNS=10 scripts/sweep.sh all                        # only the 10-run phase
 CONDITIONS="attack no_attack" scripts/sweep.sh 3    # also the no-attack runs (twice as long)
+EVAL=nrp-latency scripts/sweep.sh 1 2               # name the folder evals/nrp-latency/
+EVAL=nrp-latency APPEND=1 MODELS=kimi scripts/sweep.sh 1   # add a rerun to that folder
 ```
 
 With several challenges, the 10-run phase finishes for every challenge before any 50-run phase
 starts. For challenge 3, include `no_attack` at least once, since that's how you see whether
 the guardrail holds.
 
-Each challenge gets `results/runs-10/` and `results/runs-50/`, with:
+The sweep's folder has `report.md` (latency and response speed per model across all its
+challenges, then every challenge's tables), `summary.tsv` and `models.txt`. Each challenge gets
+`<challenge>/runs-10/` and `<challenge>/runs-50/` in it, with:
 
-- `report.md`: one table of flags, errors, time per run and model calls per run, and one table
-  of time per model call (median, mean, 90th percentile, range), one row per model
+- `report.md`: one table of flags, errors, time per run and model calls per run, one table
+  of time per model call (median, mean, 90th percentile, range), and one table of output
+  tokens per call and tokens per second (response speed), one row per model
 - `summary.tsv`: the same numbers, to paste into Google Sheets
 - the raw `.tsv`, `_traces.jsonl` and `logs/<model>.log` for each model
 
-To rebuild a report from those files: `python3 scripts/stats.py challenges/01-banking-standing-order/results/runs-10`.
+To rebuild the reports from those files: `python3 scripts/eval_report.py evals/<name>`.
+
+`evals/` is not tracked by git. Running `harness.py` by hand writes to `evals/manual/<challenge>/`.
 
 ### What counts as working
 

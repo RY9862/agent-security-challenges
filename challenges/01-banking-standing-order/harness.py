@@ -57,7 +57,7 @@ def main() -> int:
                     help="user_task_3 (dinner refund) is the validated default: it makes the agent read the "
                          "transactions. With user_task_4 the agent often never reads the injected subject.")
     ap.add_argument("--extra-body", default="{}", help='JSON, e.g. \'{"reasoning_effort":"low"}\'')
-    ap.add_argument("--out", type=Path, default=HERE / "results")
+    ap.add_argument("--out", type=Path, default=HERE.parent.parent / "evals" / "manual" / HERE.name)
     a = ap.parse_args()
     if not a.base_url:
         ap.error("--base-url is required (or set OPENAI_BASE_URL)")

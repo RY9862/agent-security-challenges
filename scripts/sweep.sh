@@ -8,13 +8,15 @@
 #
 # With several challenges, the 10-run phase is done for all of them before any 50-run phase,
 # so you get a first look at every challenge early.
-# Clears the chosen challenges' old results first, so the tables only contain this sweep.
+# Each sweep gets its own folder, evals/<EVAL>/, and never touches another sweep's results.
 # Environment (all optional):
 #   MODELS      models to test               (default: every model on the server that passes check.py)
 #   RUNS        runs per model, per phase    (default "10 50")
 #   CONDITIONS  attack and/or no_attack      (default "attack")
-#   CLEAR       1 = delete old results first (default 1; use 0 to add a phase without deleting)
-# Results:  challenges/<challenge>/results/runs-<R>/report.md   (and summary.tsv, raw TSV/traces)
+#   EVAL        folder name under evals/     (default <date>-<time>-sweep-ch<challenges>)
+#   APPEND      1 = add to an existing EVAL folder, e.g. to rerun one model (default: refuse)
+# Results:  evals/<EVAL>/report.md                          all challenges and phases together
+#           evals/<EVAL>/<challenge>/runs-<R>/report.md     (and summary.tsv, raw TSV/traces, logs/)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 USAGE="Usage: $0 <1-5 ...|all>"
@@ -52,14 +54,13 @@ RUNS="${RUNS:-10 50}"
 export CHECK_TIMEOUT_S="${CHECK_TIMEOUT_S:-90}"   # skip models that do not answer the tool check
 CONDITIONS="${CONDITIONS:-attack}"
 
-for n in $CHALLENGES; do
-  RES="$ROOT/challenges/$(challenge_dir "$n")/results"
-  if [ "${CLEAR:-1}" = 1 ]; then
-    echo "Clearing old results in $RES"
-    rm -rf "$RES" "$ROOT"/logs/ch"$n"-*
-  fi
-  mkdir -p "$RES"
-done
+EVAL="${EVAL:-$(date +%Y-%m-%d-%H%M)-sweep-ch$(echo $CHALLENGES | tr ' ' '-')}"
+EV="$ROOT/evals/$EVAL"
+if [ -e "$EV" ] && [ "${APPEND:-0}" != 1 ]; then
+  echo "$EV already exists. Pick another EVAL name, or set APPEND=1 to add to it." >&2; exit 1
+fi
+mkdir -p "$EV"
+echo "Results: $EV"
 
 if [ -z "${MODELS:-}" ]; then
   echo "Finding models on $BASE_URL that can call tools (one quick test call each)..."
@@ -80,13 +81,13 @@ fi
 MODELS=$(echo $MODELS)
 [ -n "$MODELS" ] || { echo "No usable models." >&2; exit 1; }
 echo "Challenges: $CHALLENGES   models: $MODELS   runs per phase: $RUNS"
+echo "$MODELS" | tr ' ' '\n' >> "$EV/models.txt"
 
 phase=0
 for R in $RUNS; do
   for n in $CHALLENGES; do
     D=$(challenge_dir "$n"); read -r -a ARGS <<< "$(reference_args "$n")"
-    RES="$ROOT/challenges/$D/results"; OUT="$RES/runs-$R"; mkdir -p "$OUT/logs"
-    echo "$MODELS" | tr ' ' '\n' > "$RES/models.txt"
+    OUT="$EV/$D/runs-$R"; mkdir -p "$OUT/logs"
     for m in $MODELS; do
       log="$OUT/logs/${m//[:\/]/_}.log"
       echo "== challenge $n  $R runs  model $m  -> $log"
@@ -100,7 +101,6 @@ for R in $RUNS; do
   done
   phase=$((phase + 1))
 done
-echo "Done. Reports:"
-for n in $CHALLENGES; do for R in $RUNS; do
-  echo "   challenges/$(challenge_dir "$n")/results/runs-$R/report.md"
-done; done
+sort -u -o "$EV/models.txt" "$EV/models.txt"
+python3 "$ROOT/scripts/eval_report.py" "$EV" >/dev/null
+echo "Done. Report: evals/$EVAL/report.md"

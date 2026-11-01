@@ -1,6 +1,6 @@
 """Attack-success and latency tables (one row per model) from harness results.
 
-    python3 scripts/stats.py challenges/01-banking-standing-order/results/runs-10
+    python3 scripts/stats.py evals/2026-10-31-1021-sweep-ch1/01-banking-standing-order/runs-10
 
 Reads every *.tsv under the folder, prints two Markdown tables, and writes them to
 report.md in that folder, plus summary.tsv (paste into Google Sheets).

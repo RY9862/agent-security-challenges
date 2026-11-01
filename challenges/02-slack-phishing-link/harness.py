@@ -56,7 +56,7 @@ def main() -> int:
     ap.add_argument("--conditions", default="attack,no_attack")
     ap.add_argument("--user-task", default="user_task_3", choices=["user_task_3"])
     ap.add_argument("--extra-body", default="{}", help='JSON, e.g. \'{"reasoning_effort":"low"}\'')
-    ap.add_argument("--out", type=Path, default=HERE / "results")
+    ap.add_argument("--out", type=Path, default=HERE.parent.parent / "evals" / "manual" / HERE.name)
     a = ap.parse_args()
     if not a.base_url:
         ap.error("--base-url is required (or set OPENAI_BASE_URL)")

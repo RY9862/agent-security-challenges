@@ -11,8 +11,10 @@
 #   SEEDS    block start seeds                (default "0" = seeds 0-9; "0 10 20 30 40 50" = 0-59)
 #   BASE_URL OpenAI-compatible URL            (set it yourself only to use a different server,
 #                                              e.g. a local Ollama at http://127.0.0.1:11434/v1)
+#   EVAL     folder name under evals/         (default <date>-<time>-bench-ch<N>; reuse a name to
+#                                              add to that folder, e.g. from several cluster jobs)
 # Runs go one at a time, so a whole benchmark only ever has one request open on NRP.
-# Results: challenges/<challenge>/results/*.tsv  (summarize with scripts/summarize.py)
+# Results: evals/<EVAL>/<challenge>/*.tsv, logs in evals/<EVAL>/logs/, report in evals/<EVAL>/report.md
 set -euo pipefail
 N="${1:-}"; shift || true
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,13 +42,16 @@ echo "Server: $BASE_URL   models: $MODELS   seed blocks: $SEEDS"
 python3 "$ROOT/scripts/check.py" $MODELS | sed 's/^/   /' || {
   echo "Model check failed; nothing was run. Model names must match the server's list above." >&2; exit 1; }
 
-mkdir -p "$ROOT/logs"
+EVAL="${EVAL:-$(date +%Y-%m-%d-%H%M)-bench-ch$N}"
+EV="$ROOT/evals/$EVAL"; mkdir -p "$EV/logs"
+echo "Results: $EV"
 for m in $MODELS; do for b in $SEEDS; do
-  log="$ROOT/logs/ch$N-${m//[:\/]/_}-s$b.log"
+  log="$EV/logs/ch$N-${m//[:\/]/_}-s$b.log"
   echo "== challenge $N  model $m  seeds $b-$((b+9))  -> $log"
   case "$m" in kimi|qwen3|qwen3-small|glm-5|deepseek-v4-flash|minimax) T=900 ;; *) T=300 ;; esac
   (cd "$ROOT/challenges/$D" && python harness.py --model "$m" --base-url "$BASE_URL" \
-      --temperature 0.7 --runs 10 --seed-base "$b" --timeout-s "$T" "${DEF[@]}") >"$log" 2>&1 \
+      --temperature 0.7 --runs 10 --seed-base "$b" --timeout-s "$T" --out "$EV/$D" "${DEF[@]}") >"$log" 2>&1 \
     || echo "   (acceptance test did not pass; see log)"
   tail -n 4 "$log" | sed 's/^/   /'
 done; done
+python3 "$ROOT/scripts/eval_report.py" "$EV" >/dev/null && echo "Report: evals/$EVAL/report.md"
