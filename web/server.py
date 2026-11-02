@@ -64,7 +64,8 @@ PYTHON = _env("ASC_PYTHON", sys.executable)
 # Same list as scripts/play.sh: always-thinking hosted models need a longer timeout.
 SLOW_MODELS = {"kimi", "qwen3", "qwen3-small", "glm-5", "deepseek-v4-flash", "minimax"}
 
-PROGRESS = "@@progress "    # runner.py's live tool-call lines on stderr
+sys.path.insert(0, str(HERE))
+from runner import PARTIAL, PROGRESS, _token_totals, folder_hash  # noqa: E402
 SESSION_COOKIE = "asc_session"
 SESSION_DAYS = 30
 
@@ -116,7 +117,24 @@ CREATE TABLE IF NOT EXISTS solves (
   solved REAL NOT NULL,
   PRIMARY KEY (user_id, challenge)
 );
+-- When each player first and last opened each challenge page (time spent, for research).
+CREATE TABLE IF NOT EXISTS views (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  challenge TEXT NOT NULL,
+  first_viewed REAL NOT NULL,
+  last_viewed REAL NOT NULL,
+  view_count INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, challenge)
+);
 """
+
+# Columns added after the first version. Existing databases get them on startup.
+MIGRATIONS = [
+    ("attempts", "challenge_version", "TEXT"),   # hash of the challenge/ folder the run used
+    ("attempts", "settings", "TEXT"),            # run settings, JSON (no key, no cache salt)
+    ("attempts", "tokens_in", "INTEGER"),
+    ("attempts", "tokens_out", "INTEGER"),
+]
 
 db: sqlite3.Connection
 
@@ -147,6 +165,23 @@ def _scenario(chal: Path) -> str:
         return ""
     m = re.search(r"^## The scenario\s*\n(.*?)(?=^## |\Z)", p.read_text(), re.S | re.M)
     return m.group(1).strip() if m else ""
+
+
+def _git_commit() -> str:
+    """The repo commit the server is running from (ASC_GIT_COMMIT in Docker, which has no .git)."""
+    if _env("ASC_GIT_COMMIT"):
+        return _env("ASC_GIT_COMMIT")
+    try:
+        out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        dirty = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--", "challenges", "web"],
+                               capture_output=True, text=True, timeout=10).stdout.strip()
+        return out.stdout.strip() + ("-dirty" if dirty else "") if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+GIT_COMMIT = ""
 
 
 def load_challenges() -> None:
@@ -219,6 +254,7 @@ async def execute(attempt_id: int) -> None:
     chal = CHALLENGES[row["challenge"]]
     payload = json.dumps({"text": row["input"], "config": run_config(chal, row["model"])})
     hard_limit = 1800 if row["model"] in SLOW_MODELS else 600
+    partial: dict = {"challenge_version": None, "model_calls": [], "tool_calls": []}
     async with run_slots:
         ex("UPDATE attempts SET status='running', started=? WHERE id=?", (time.time(), attempt_id))
         try:
@@ -235,7 +271,13 @@ async def execute(attempt_id: int) -> None:
             async def read_stderr():
                 async for line in proc.stderr:
                     text = line.decode(errors="replace")
-                    if text.startswith(PROGRESS):
+                    if text.startswith(PARTIAL):
+                        item = json.loads(text[len(PARTIAL):])
+                        if item["kind"] == "challenge_version":
+                            partial["challenge_version"] = item["data"]
+                        else:
+                            partial[item["kind"] + "s"].append(item["data"])
+                    elif text.startswith(PROGRESS):
                         progress.append(json.loads(text[len(PROGRESS):]))
                         ex("UPDATE attempts SET progress=? WHERE id=?", (json.dumps(progress), attempt_id))
                     else:
@@ -252,18 +294,31 @@ async def execute(attempt_id: int) -> None:
             try:
                 result = json.loads(out)
             except json.JSONDecodeError:
-                raise RuntimeError(f"runner crashed: {''.join(err_tail)[-400:]}")
+                how = (f"was killed by signal {-proc.returncode}" if proc.returncode < 0
+                       else f"exited with code {proc.returncode}")
+                tail = "".join(err_tail).strip()[-400:]
+                raise RuntimeError(f"the run stopped unexpectedly (runner {how})" + (f": {tail}" if tail else ""))
             if "error" in result:
                 raise RuntimeError(result["error"])
         except Exception as e:
             msg = str(e).replace(API_KEY, "***") if API_KEY else str(e)
-            ex("UPDATE attempts SET status='error', error=?, finished=? WHERE id=?",
-               (msg, time.time(), attempt_id))
+            # Keep whatever the run got through before it failed, for investigation.
+            tokens = _token_totals(partial["model_calls"])
+            saved = {"partial": True, **partial, "tokens": tokens}
+            ex("UPDATE attempts SET status='error', error=?, finished=?, result=?, tokens_in=?, "
+               "tokens_out=?, challenge_version=COALESCE(?, challenge_version) WHERE id=?",
+               (msg, time.time(), json.dumps(saved, default=str).replace(API_KEY, "***") if API_KEY
+                else json.dumps(saved, default=str), tokens["input"], tokens["output"],
+                partial["challenge_version"], attempt_id))
             return
     passed = result["passed"]
     utd = result.get("user_task_done")
-    ex("UPDATE attempts SET status='done', passed=?, user_task_done=?, result=?, finished=? WHERE id=?",
-       (int(passed), None if utd is None else int(utd), json.dumps(result), time.time(), attempt_id))
+    tokens = result.get("tokens") or {}
+    ex("UPDATE attempts SET status='done', passed=?, user_task_done=?, result=?, finished=?, "
+       "tokens_in=?, tokens_out=?, progress=NULL, challenge_version=COALESCE(?, challenge_version) "
+       "WHERE id=?",
+       (int(passed), None if utd is None else int(utd), json.dumps(result), time.time(),
+        tokens.get("input"), tokens.get("output"), result.get("challenge_version"), attempt_id))
     if passed:
         ex("INSERT OR IGNORE INTO solves (user_id, challenge, attempt_id, solved) VALUES (?,?,?,?)",
            (row["user_id"], row["challenge"], attempt_id, time.time()))
@@ -273,11 +328,15 @@ async def execute(attempt_id: int) -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global db, run_slots, FLAG_KEY, CACHE_SALT
+    global db, run_slots, FLAG_KEY, CACHE_SALT, GIT_COMMIT
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DATA_DIR / "asc.sqlite3", check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.executescript(SCHEMA)
+    for table, col, typ in MIGRATIONS:
+        if col not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    db.commit()
     db.execute("PRAGMA journal_mode=WAL")
     FLAG_KEY = _persistent_secret("flag_key")
     CACHE_SALT = _persistent_secret("cache_salt")
@@ -286,6 +345,7 @@ async def lifespan(_app: FastAPI):
        "WHERE status IN ('queued','running')")
     run_slots = asyncio.Semaphore(MAX_CONCURRENT)
     load_challenges()
+    GIT_COMMIT = _git_commit()
     if not API_KEY:
         print("[asc] warning: no ASC_API_KEY / ASC_API_KEY_FILE set; model calls will fail "
               "unless ASC_BASE_URL is a local Ollama", file=sys.stderr)
@@ -425,6 +485,10 @@ def _get_challenge(slug: str) -> dict:
 @app.get("/api/challenges/{slug}")
 def get_challenge(slug: str, user=Depends(require_user)):
     c = _get_challenge(slug)
+    now = time.time()
+    ex("INSERT INTO views (user_id, challenge, first_viewed, last_viewed) VALUES (?,?,?,?) "
+       "ON CONFLICT(user_id, challenge) DO UPDATE SET last_viewed=excluded.last_viewed, "
+       "view_count=view_count+1", (user["id"], slug, now, now))
     solve = q1("SELECT * FROM solves WHERE user_id=? AND challenge=?", (user["id"], slug))
     keys = ("briefing", "scenario", "max_input_chars", "input_label", "user_task_label")
     return {**_card(c), **{k: c[k] for k in keys},
@@ -453,8 +517,15 @@ async def create_attempt(slug: str, body: AttemptIn, user=Depends(require_user))
                 (user["id"], time.time() - 3600))["n"]
     if recent >= HOURLY_LIMIT and not is_admin(user):
         raise HTTPException(429, f"you've used your {HOURLY_LIMIT} runs for this hour; try again later")
-    aid = ex("INSERT INTO attempts (user_id, challenge, model, input, status, created) "
-             "VALUES (?,?,?,?, 'queued', ?)", (user["id"], slug, model, text, time.time()))
+    cfg = run_config(c, model)
+    settings = {k: v for k, v in cfg.items() if k not in ("api_key", "extra_body")}
+    settings["extra_body"] = {k: v for k, v in cfg.get("extra_body", {}).items() if k != "cache_salt"}
+    settings["server_commit"] = GIT_COMMIT
+    aid = ex("INSERT INTO attempts (user_id, challenge, model, input, status, created, "
+             "challenge_version, settings) VALUES (?,?,?,?, 'queued', ?, ?, ?)",
+             (user["id"], slug, model, text, time.time(),
+              folder_hash(Path(c["path"]) / "challenge"),   # provisional; the runner's replaces it
+              json.dumps(settings)))
     task = asyncio.create_task(execute(aid))
     background.add(task)
     task.add_done_callback(background.discard)
@@ -466,6 +537,7 @@ def _attempt_out(row: sqlite3.Row, full: bool) -> dict:
     out["passed"] = None if row["passed"] is None else bool(row["passed"])
     out["user_task_done"] = None if row["user_task_done"] is None else bool(row["user_task_done"])
     out["input_preview"] = row["input"][:120]
+    out["tokens_in"], out["tokens_out"] = row["tokens_in"], row["tokens_out"]
     if row["status"] == "queued":
         out["queue_position"] = q1("SELECT COUNT(*) n FROM attempts WHERE status='queued' AND id<=?",
                                    (row["id"],))["n"]
@@ -474,6 +546,8 @@ def _attempt_out(row: sqlite3.Row, full: bool) -> dict:
         if row["status"] == "running":
             out["progress"] = json.loads(row["progress"]) if row["progress"] else []
         out["result"] = json.loads(row["result"]) if row["result"] else None
+        out["challenge_version"] = row["challenge_version"]
+        out["settings"] = json.loads(row["settings"]) if row["settings"] else None
         if out["passed"]:
             out["flag"] = flag_for(row["challenge"], row["user_id"])
             out["message"] = CHALLENGES.get(row["challenge"], {}).get("success")
@@ -487,7 +561,16 @@ def get_attempt(aid: int, user=Depends(require_user)):
     row = q1("SELECT * FROM attempts WHERE id=?", (aid,))
     if not row or (row["user_id"] != user["id"] and not is_admin(user)):
         raise HTTPException(404, "no such attempt")
-    return _attempt_out(row, full=True)
+    out = _attempt_out(row, full=True)
+    if not is_admin(user):
+        # Kept for investigation only. Players see the same trace as the terminal version;
+        # the model's raw responses include its reasoning text, which would make it easier.
+        for k in ("settings", "challenge_version"):
+            out.pop(k, None)
+        if out.get("result"):
+            for k in ("model_calls", "challenge_version"):
+                out["result"].pop(k, None)
+    return out
 
 
 @app.get("/api/challenges/{slug}/attempts")
@@ -516,7 +599,9 @@ def scoreboard(user=Depends(require_user)):
 def admin_stats(_=Depends(require_admin)):
     rows = q("""SELECT challenge, model, COUNT(*) runs, SUM(passed=1) flags,
                        SUM(status='error') errors, COUNT(DISTINCT user_id) players,
-                       AVG(CASE WHEN status='done' THEN finished-started END) avg_seconds
+                       AVG(CASE WHEN status='done' THEN finished-started END) avg_seconds,
+                       AVG(tokens_in) avg_tokens_in, AVG(tokens_out) avg_tokens_out,
+                       SUM(tokens_in) total_tokens_in, SUM(tokens_out) total_tokens_out
                 FROM attempts GROUP BY challenge, model ORDER BY challenge, model""")
     queue = q1("SELECT SUM(status='queued') queued, SUM(status='running') running FROM attempts")
     return {"by_challenge_model": [dict(r) for r in rows],
@@ -540,15 +625,53 @@ def admin_attempts(challenge: str = "", username: str = "", passed: str = "", li
     return [{**_attempt_out(r, full=False), "username": r["username"]} for r in q(sql, tuple(args))]
 
 
+PLAYER_PROGRESS_SQL = """
+SELECT u.username, v.challenge, v.first_viewed, v.last_viewed, v.view_count,
+       COUNT(a.id) attempts, SUM(a.passed=1) flags, SUM(a.status='error') errors,
+       s.solved first_solve,
+       s.solved - v.first_viewed seconds_to_solve,
+       CASE WHEN s.attempt_id IS NULL THEN NULL ELSE
+         (SELECT COUNT(*) FROM attempts b WHERE b.user_id=v.user_id AND b.challenge=v.challenge
+            AND b.id<=s.attempt_id) END attempts_to_solve,
+       SUM(a.tokens_in) tokens_in, SUM(a.tokens_out) tokens_out,
+       SUM(a.finished - a.started) run_seconds
+FROM views v JOIN users u ON u.id=v.user_id
+LEFT JOIN attempts a ON a.user_id=v.user_id AND a.challenge=v.challenge
+LEFT JOIN solves s ON s.user_id=v.user_id AND s.challenge=v.challenge
+GROUP BY v.user_id, v.challenge ORDER BY u.username, v.challenge
+"""
+
+
+@app.get("/api/admin/players")
+def admin_players(_=Depends(require_admin)):
+    """One row per player and challenge they opened: first/last visit, attempts, solve time.
+    seconds_to_solve is wall-clock time from first opening the challenge to the first flag,
+    not time actively spent on it."""
+    return [dict(r) for r in q(PLAYER_PROGRESS_SQL)]
+
+
+def _jsonl(rows: list[dict], filename: str) -> PlainTextResponse:
+    body = "".join(json.dumps(r) + "\n" for r in rows)
+    return PlainTextResponse(body, media_type="application/x-ndjson",
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @app.get("/api/admin/export.jsonl")
 def admin_export(_=Depends(require_admin)):
-    lines = []
+    """Every attempt: input, settings, challenge version, tokens, timing, full result
+    (trace, grader verdict, and every raw model response under result.model_calls)."""
+    rows = []
     for r in q("SELECT a.*, u.username FROM attempts a JOIN users u ON u.id=a.user_id ORDER BY a.id"):
-        d = {k: r[k] for k in r.keys() if k not in ("result", "user_id")}
+        d = {k: r[k] for k in r.keys() if k not in ("result", "settings", "progress", "user_id")}
+        d["settings"] = json.loads(r["settings"]) if r["settings"] else None
         d["result"] = json.loads(r["result"]) if r["result"] else None
-        lines.append(json.dumps(d))
-    return PlainTextResponse("\n".join(lines) + "\n", media_type="application/x-ndjson",
-                             headers={"Content-Disposition": "attachment; filename=attempts.jsonl"})
+        rows.append(d)
+    return _jsonl(rows, "attempts.jsonl")
+
+
+@app.get("/api/admin/players.jsonl")
+def admin_players_export(_=Depends(require_admin)):
+    return _jsonl([dict(r) for r in q(PLAYER_PROGRESS_SQL)], "players.jsonl")
 
 
 @app.get("/api/health")

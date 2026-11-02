@@ -1,10 +1,13 @@
-# From web/:   docker compose up -d --build
+# From web/:   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+# (GIT_COMMIT is recorded with every run; without it runs record "unknown".)
 # Needs web/.env (copy .env.example) and web/secrets/nrp_key (see README.md).
 services:
   web:
     build:
       context: ..
       dockerfile: web/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     restart: unless-stopped
     env_file: .env
     environment:

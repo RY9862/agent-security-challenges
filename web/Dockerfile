@@ -14,7 +14,9 @@ COPY challenges/ challenges/
 COPY web/ web/
 
 RUN mkdir /data && chown asc:asc /data
-ENV ASC_DATA_DIR=/data PYTHONUNBUFFERED=1
+# The image has no .git, so the commit is passed in at build time and recorded with each run.
+ARG GIT_COMMIT=unknown
+ENV ASC_DATA_DIR=/data PYTHONUNBUFFERED=1 ASC_GIT_COMMIT=$GIT_COMMIT
 VOLUME /data
 USER asc
 EXPOSE 8000

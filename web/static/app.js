@@ -296,7 +296,7 @@ async function renderChallenge(slug, openAttempt) {
 
 // ---------------------------------------------------------------- result view (shared with admin)
 
-function renderResult(panel, a, c, { onLoadInput } = {}) {
+function renderResult(panel, a, c, { onLoadInput, admin } = {}) {
   const kids = [h("h2", {}, `Attempt #${a.id}`)];
 
   if (a.status === "queued" || a.status === "running") {
@@ -330,11 +330,26 @@ function renderResult(panel, a, c, { onLoadInput } = {}) {
   }
 
   const r = a.result;
-  if (r) {
+  if (r && r.partial) {
+    // A failed run: show what it got through before failing (admins also get raw responses).
+    const tools = r.tool_calls || [];
+    kids.push(h("h3", {}, `Before it failed: ${(r.model_calls || []).length} model calls, ${tools.length} tool calls`));
+    if (tools.length) {
+      kids.push(traceNode({ trace: tools.flatMap((t) => [
+        { kind: "tool_call", name: t.name, args: t.args },
+        { kind: "tool_result", name: t.name, content: t.result, error: t.error }]) }));
+    }
+    if (admin) kids.push(adminDetails(a, r));
+  } else if (r) {
     const facts = h("dl", { class: "kv" },
       h("dt", {}, "Model"), h("dd", { class: "mono" }, r.served_model || a.model),
       h("dt", {}, "Model calls"), h("dd", {}, `${r.steps_used}${r.hit_step_limit ? " (hit the step limit)" : ""}`),
       h("dt", {}, "Time"), h("dd", {}, secs(a)));
+    if (r.tokens) {
+      facts.append(h("dt", {}, "Tokens"), h("dd", {},
+        `${r.tokens.input.toLocaleString()} in · ${r.tokens.output.toLocaleString()} out` +
+        (r.tokens.reasoning ? ` (${r.tokens.reasoning.toLocaleString()} reasoning)` : "")));
+    }
     if (c && c.user_task_label && r.user_task_done != null) {
       facts.append(h("dt", {}, c.user_task_label), h("dd", {}, r.user_task_done ? "yes" : "no"));
     }
@@ -346,6 +361,7 @@ function renderResult(panel, a, c, { onLoadInput } = {}) {
           h("dd", { class: "mono" }, k)])));
     }
     kids.push(h("h3", {}, "What the agent did"), traceNode(r));
+    if (admin) kids.push(adminDetails(a, r));
   }
 
   const tools = h("div", { class: "input-foot" });
@@ -353,6 +369,28 @@ function renderResult(panel, a, c, { onLoadInput } = {}) {
   kids.push(h("details", {}, h("summary", { class: "muted" }, `Your input (${(a.input || "").length} chars)`),
     h("pre", { class: "briefing" }, a.input || "")), tools);
   panel.replaceChildren(...kids);
+}
+
+// Admin only: everything kept for investigations. Raw model responses include any
+// reasoning text, which players don't see.
+function adminDetails(a, r) {
+  const calls = r.model_calls || [];
+  return h("div", { class: "stack" },
+    h("h3", {}, "For investigation"),
+    h("dl", { class: "kv" },
+      h("dt", {}, "Challenge version"), h("dd", { class: "mono" }, a.challenge_version || "–"),
+      h("dt", {}, "Server commit"), h("dd", { class: "mono" }, (a.settings && a.settings.server_commit) || "–"),
+      h("dt", {}, "Queued for"), h("dd", {}, a.started ? `${Math.round(a.started - a.created)} s` : "–"),
+      h("dt", {}, "Tokens"), h("dd", {}, r.tokens ? `${r.tokens.input} in / ${r.tokens.output} out (${r.tokens.reasoning} reasoning)` : "–")),
+    h("details", {}, h("summary", { class: "muted" }, "Run settings"),
+      h("pre", { class: "briefing" }, JSON.stringify(a.settings, null, 2))),
+    h("details", {}, h("summary", { class: "muted" }, `Raw model responses (${calls.length})`),
+      calls.map((m, i) => h("div", {},
+        h("p", { class: "muted small" },
+          m.error ? `Call ${i + 1} · ${m.seconds} s · FAILED` :
+          `Call ${i + 1} · ${m.seconds} s · ${m.finish_reason || ""} · ` +
+          `${(m.usage && m.usage.prompt_tokens) || 0} in / ${(m.usage && m.usage.completion_tokens) || 0} out`),
+        h("pre", { class: m.error ? "briefing err" : "briefing" }, m.error || JSON.stringify(m.message, null, 2))))));
 }
 
 function traceNode(r) {
@@ -401,7 +439,8 @@ async function renderScoreboard() {
 
 async function renderAdmin() {
   setNav("admin");
-  const [stats, chals] = await Promise.all([api("/api/admin/stats"), api("/api/challenges")]);
+  const [stats, chals, players] = await Promise.all([api("/api/admin/stats"), api("/api/challenges"), api("/api/admin/players")]);
+  const dur = (sec) => sec == null ? "–" : sec < 120 ? `${Math.round(sec)} s` : sec < 7200 ? `${Math.round(sec / 60)} min` : `${(sec / 3600).toFixed(1)} h`;
   const byChal = Object.fromEntries(chals.map((c) => [c.slug, c]));
   const fChal = h("select", {}, h("option", { value: "" }, "All challenges"), chals.map((c) => h("option", { value: c.slug }, `${pad2(c.number)} ${c.title}`)));
   const fUser = h("input", { placeholder: "username" });
@@ -416,7 +455,7 @@ async function renderAdmin() {
       class: "clickable", onclick: async () => {
         const full = await api(`/api/attempts/${a.id}`);
         detail.hidden = false;
-        renderResult(detail, full, byChal[a.challenge]);
+        renderResult(detail, full, byChal[a.challenge], { admin: true });
         detail.prepend(h("p", { class: "muted" }, `${a.username} · ${a.challenge}`));
         detail.scrollIntoView({ behavior: "smooth" });
       },
@@ -437,7 +476,9 @@ async function renderAdmin() {
   const total = s.reduce((n, r) => n + r.runs, 0), flags = s.reduce((n, r) => n + (r.flags || 0), 0);
   app.replaceChildren(
     h("div", { class: "page-head" }, h("h1", {}, "Admin"),
-      h("a", { class: "btn", href: "/api/admin/export.jsonl" }, "Export all attempts (JSONL)")),
+      h("div", { class: "filters" },
+        h("a", { class: "btn", href: "/api/admin/export.jsonl" }, "Export attempts (JSONL)"),
+        h("a", { class: "btn", href: "/api/admin/players.jsonl" }, "Export player progress (JSONL)"))),
     h("div", { class: "stat-row" },
       h("div", { class: "stat" }, h("b", {}, total), h("span", {}, "attempts")),
       h("div", { class: "stat" }, h("b", {}, flags), h("span", {}, "flags")),
@@ -446,15 +487,28 @@ async function renderAdmin() {
     h("div", { class: "panel table-wrap gap-below" },
       h("h2", {}, "Success rate by challenge and model"),
       h("table", {},
-        h("thead", {}, h("tr", {}, ["Challenge", "Model", "Runs", "Flags", "Rate", "Errors", "Players", "Avg time"].map((t) => h("th", {}, t)))),
+        h("thead", {}, h("tr", {}, ["Challenge", "Model", "Runs", "Flags", "Rate", "Errors", "Players", "Avg time", "Avg tokens in / out"].map((t) => h("th", {}, t)))),
         h("tbody", {}, s.map((r) => {
           const ok = r.runs - (r.errors || 0);
           return h("tr", {},
             h("td", {}, r.challenge), h("td", { class: "mono" }, r.model), h("td", {}, r.runs),
             h("td", {}, r.flags || 0), h("td", {}, ok ? `${Math.round(100 * (r.flags || 0) / ok)}%` : "–"),
             h("td", {}, r.errors || 0), h("td", {}, r.players),
-            h("td", { class: "muted" }, r.avg_seconds ? `${Math.round(r.avg_seconds)} s` : "–"));
+            h("td", { class: "muted" }, r.avg_seconds ? `${Math.round(r.avg_seconds)} s` : "–"),
+            h("td", { class: "muted" }, r.avg_tokens_in ? `${Math.round(r.avg_tokens_in).toLocaleString()} / ${Math.round(r.avg_tokens_out).toLocaleString()}` : "–"));
         })))),
+    h("div", { class: "panel table-wrap gap-below" },
+      h("h2", {}, "Player progress"),
+      h("p", { class: "muted small" }, "Time to solve is wall-clock time from first opening the challenge to the first flag, not time actively spent."),
+      h("table", {},
+        h("thead", {}, h("tr", {}, ["Player", "Challenge", "First opened", "Visits", "Attempts", "Flags", "Attempts to solve", "Time to solve", "Tokens in / out"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, players.length ? players.map((p) => h("tr", {},
+          h("td", {}, p.username), h("td", { class: "mono" }, p.challenge.slice(0, 2)),
+          h("td", { class: "muted" }, ago(p.first_viewed)), h("td", {}, p.view_count),
+          h("td", {}, p.attempts), h("td", {}, p.flags || 0),
+          h("td", {}, p.attempts_to_solve ?? "–"), h("td", {}, dur(p.seconds_to_solve)),
+          h("td", { class: "muted" }, p.tokens_in ? `${p.tokens_in.toLocaleString()} / ${p.tokens_out.toLocaleString()}` : "–"))) :
+          [h("tr", {}, h("td", { colspan: 9, class: "muted" }, "No one has opened a challenge yet."))]))),
     h("div", { class: "panel" },
       h("h2", {}, "Recent attempts"),
       h("div", { class: "filters" }, fChal, fUser, fPassed, h("button", { onclick: load }, "Refresh")),

@@ -66,7 +66,7 @@ cp .env.example .env && nano .env        # invite code, admins, models
 mkdir -p secrets && nano secrets/nrp_key # paste the NRP key (yours or Ryan's)
 sudo chown 1000 secrets/nrp_key && sudo chmod 400 secrets/nrp_key   # the container runs as uid 1000
 
-docker compose up -d --build
+GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
 curl -s 127.0.0.1:8000/api/health        # {"ok":true,"challenges":5}
 
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit the hostname first
@@ -82,7 +82,7 @@ process, so several workers would each send `ASC_MAX_CONCURRENT` runs to NRP at 
 ### Updating
 
 ```bash
-git pull && docker compose up -d --build   # in web/
+git pull && GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build   # in web/
 ```
 
 Accounts, attempts and solves are in the `asc-data` volume and survive rebuilds. So do the
