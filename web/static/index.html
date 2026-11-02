@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Injection Lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">
+      <span class="brand-mark">&gt;_</span> Agent Injection Lab
+    </a>
+    <nav id="nav" hidden>
+      <a href="#/" data-route="challenges">Challenges</a>
+      <a href="#/scoreboard" data-route="scoreboard">Scoreboard</a>
+      <a href="#/admin" data-route="admin" id="nav-admin" hidden>Admin</a>
+    </nav>
+    <div class="who" id="who" hidden>
+      <span id="who-name"></span>
+      <button class="link" id="logout">Sign out</button>
+    </div>
+  </header>
+  <main id="app"><p class="muted center">Loading…</p></main>
+  <footer class="foot">
+    Grading is done in code by checking tool calls or the final state. There is no LLM judge.
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

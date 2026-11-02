@@ -1,0 +1,27 @@
+# Alternative to Docker: run straight from a checkout with systemd.
+#   sudo cp web/deploy/asc-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now asc-web
+# Assumes the repo is at /opt/agent-security-challenges with .venv set up
+# (scripts/setup.sh, then .venv/bin/pip install -r web/requirements.txt), owned by user "asc".
+[Unit]
+Description=Agent prompt-injection challenges (web)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=asc
+WorkingDirectory=/opt/agent-security-challenges
+EnvironmentFile=/opt/agent-security-challenges/web/.env
+Environment=ASC_API_KEY_FILE=/opt/agent-security-challenges/web/secrets/nrp_key
+Environment=ASC_DATA_DIR=/var/lib/asc-web
+StateDirectory=asc-web
+ExecStart=/opt/agent-security-challenges/.venv/bin/uvicorn server:app --app-dir web --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/asc-web
+
+[Install]
+WantedBy=multi-user.target

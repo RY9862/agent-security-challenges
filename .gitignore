@@ -5,3 +5,6 @@ logs/
 *.out
 *.log
 evals/
+web/data/
+web/.env
+web/secrets/

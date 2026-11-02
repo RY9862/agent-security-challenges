@@ -1,0 +1,28 @@
+# From web/:   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+# (GIT_COMMIT is recorded with every run; without it runs record "unknown".)
+# Needs web/.env (copy .env.example) and web/secrets/nrp_key (see README.md).
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASC_API_KEY_FILE: /run/secrets/nrp_key
+    secrets:
+      - nrp_key
+    volumes:
+      - asc-data:/data
+    # Only the reverse proxy on this VM talks to it; it is never exposed directly.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+secrets:
+  nrp_key:
+    file: ./secrets/nrp_key
+
+volumes:
+  asc-data:
