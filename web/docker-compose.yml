@@ -1,0 +1,25 @@
+# From web/:   docker compose up -d --build
+# Needs web/.env (copy .env.example) and web/secrets/nrp_key (see README.md).
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASC_API_KEY_FILE: /run/secrets/nrp_key
+    secrets:
+      - nrp_key
+    volumes:
+      - asc-data:/data
+    # Only the reverse proxy on this VM talks to it; it is never exposed directly.
+    ports:
+      - "127.0.0.1:8000:8000"
+
+secrets:
+  nrp_key:
+    file: ./secrets/nrp_key
+
+volumes:
+  asc-data:

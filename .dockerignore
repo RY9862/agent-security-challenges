@@ -1,0 +1,15 @@
+# Keep spoilers, local results and secrets out of the web image.
+.git
+.venv
+**/__pycache__
+evals
+results
+logs
+challenges/SOLUTIONS-SPOILERS.md
+challenges/*/solutions
+challenges/*/tests
+challenges/*/harness.py
+web/data
+web/.env
+web/secrets
+scripts
