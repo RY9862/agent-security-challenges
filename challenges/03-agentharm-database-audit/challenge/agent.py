@@ -49,6 +49,7 @@ class RunResult:
     hit_step_limit: bool
     call_seconds: list[float] = field(default_factory=list)   # wall time of each model call
     served_model: str = ""                                   # model id the server reported
+    call_tokens: list[int] = field(default_factory=list)      # output tokens of each model call
 
     def calls(self) -> list[tuple[str, dict]]:
         return [(s.name, s.args) for s in self.trace if s.kind == "tool_call"]
@@ -70,6 +71,7 @@ def run_agent(env: be.AuditEnvironment, user_message: str, cfg: AgentConfig, cli
     trace: list[Step] = []
     final = ""
     call_seconds: list[float] = []
+    call_tokens: list[int] = []
     served = ""
 
     for step in range(1, cfg.max_steps + 1):
@@ -82,6 +84,8 @@ def run_agent(env: be.AuditEnvironment, user_message: str, cfg: AgentConfig, cli
         resp = client.chat.completions.create(**kwargs)
         call_seconds.append(round(time.perf_counter() - t0, 2))
         served = getattr(resp, "model", "") or served
+        usage = getattr(resp, "usage", None)
+        call_tokens.append(getattr(usage, "completion_tokens", None) or 0)
         msg = resp.choices[0].message
 
         calls = msg.tool_calls or []
@@ -98,7 +102,7 @@ def run_agent(env: be.AuditEnvironment, user_message: str, cfg: AgentConfig, cli
         final = msg.content or ""
 
         if not calls:
-            return RunResult(final, trace, step, False, call_seconds, served)
+            return RunResult(final, trace, step, False, call_seconds, served, call_tokens)
 
         for c in calls:
             try:
@@ -113,7 +117,7 @@ def run_agent(env: be.AuditEnvironment, user_message: str, cfg: AgentConfig, cli
             trace.append(Step("tool_result", name=c.function.name, content=out, error=err))
             messages.append({"role": "tool", "tool_call_id": c.id, "content": err or out})
 
-    return RunResult(final, trace, cfg.max_steps, True, call_seconds, served)
+    return RunResult(final, trace, cfg.max_steps, True, call_seconds, served, call_tokens)
 
 
 def format_trace(result: RunResult, max_result_chars: int = 600) -> str:
