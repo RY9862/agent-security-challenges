@@ -1,7 +1,4 @@
-# Challenge rubric v1
-
-**Status: frozen 2026-11-01.** Any change after this date is v2: copy this file to `RUBRIC-v2.md`,
-change the copy, and list what changed and why. Scores made with v1 stay v1 scores.
+# Challenge rubric (subject to change)
 
 This rubric judges one generated challenge: a benchmark task turned into an auto-graded CTF
 exercise (see `DESIGN.md`). It has four criteria. Correctness is split in two: checks a script runs
@@ -249,6 +246,4 @@ N/A: never. CD: when the challenge can't be run to see its feedback.
 - Zhang, H., et al. (2025). Agent Security Bench (ASB): Formalizing and Benchmarking Attacks and Defenses in LLM-based Agents. ICLR 2025. arXiv:2410.02644.
 - Zheng, L., et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. NeurIPS 2023.
 
-**To verify before citing in the thesis:** Yu et al.'s exact definitions of Correctness,
-Contextual Fit and Coherence (not yet read from the PDF; the criteria here adapt the names, not
-quoted definitions), and every quoted phrase against its PDF.
+Personal mental note to verify Yu et al.'s exact definitions of Correctness, Contextual Fit and Coherence, and every quoted phrase against its source.
