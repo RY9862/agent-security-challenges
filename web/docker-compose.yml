@@ -12,8 +12,11 @@ services:
     env_file: .env
     environment:
       ASC_API_KEY_FILE: /run/secrets/nrp_key
+      # For Sign in with Google: uncomment this and google_client_secret in both lists below.
+      # ASC_GOOGLE_CLIENT_SECRET_FILE: /run/secrets/google_client_secret
     secrets:
       - nrp_key
+      # - google_client_secret
     volumes:
       - asc-data:/data
     # Only the reverse proxy on this VM talks to it; it is never exposed directly.
@@ -23,6 +26,8 @@ services:
 secrets:
   nrp_key:
     file: ./secrets/nrp_key
+  # google_client_secret:
+  #   file: ./secrets/google_client_secret
 
 volumes:
   asc-data:

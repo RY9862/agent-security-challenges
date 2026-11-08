@@ -100,6 +100,12 @@ document.getElementById("logout").addEventListener("click", async () => {
 function renderAuth() {
   let mode = "login";
   const err = h("p", { class: "error-text" });
+  // A failed Google sign-in comes back as /?auth_error=...; show it once, then tidy the URL.
+  const params = new URLSearchParams(location.search);
+  if (params.get("auth_error")) {
+    err.textContent = params.get("auth_error");
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
   const user = h("input", { name: "username", autocomplete: "username", required: true });
   const pw = h("input", { name: "password", type: "password", autocomplete: "current-password" });
   const invite = h("input", { name: "invite", autocomplete: "off" });
@@ -112,7 +118,8 @@ function renderAuth() {
     inviteRow.hidden = mode === "login" || !ME.invite_required;
     pw.autocomplete = mode === "login" ? "current-password" : "new-password";
     submit.textContent = mode === "login" ? "Sign in" : "Create account";
-    err.textContent = "";
+    if (!params.get("auth_error")) err.textContent = "";
+    params.delete("auth_error");
   }
   const form = h("form", {
     onsubmit: async (ev) => {
@@ -128,12 +135,41 @@ function renderAuth() {
     h("div", {}, h("label", {}, "Username"), user),
     h("div", {}, h("label", {}, "Password"), pw),
     inviteRow, err, submit);
+
+  // Sign in with Google. New accounts need the invite code unless the server limits Google
+  // sign-in to some organisations (google_domains), so there's a box for it next to the button.
+  const domains = ME.google_domains || [];
+  const needInvite = !domains.length && ME.invite_required;
+  const googleInvite = h("input", { name: "google-invite", autocomplete: "off",
+                                    placeholder: "Invite code (first time only)" });
+  const google = ME.google ? h("div", { class: "google-signin" },
+    needInvite ? googleInvite : null,
+    h("button", {
+      type: "button", class: "primary",
+      onclick: () => {
+        const code = googleInvite.value || invite.value;
+        location.href = "/api/auth/google/start" + (code ? "?invite=" + encodeURIComponent(code) : "");
+      },
+    }, "Sign in with Google"),
+    domains.length
+      ? h("p", { class: "muted" }, `Use your ${domains.map((d) => "@" + d).join(" or ")} Google account.`)
+      : (needInvite ? h("p", { class: "muted" }, "Any Google account. The invite code is only needed the first time.") : null),
+  ) : null;
+
   sync();
-  app.replaceChildren(h("div", { class: "auth panel" },
+  const parts = [
     h("h1", {}, "Agent Injection Lab"),
     h("p", { class: "muted" }, "CTF challenges where you attack an AI agent that uses tools."),
-    h("div", { class: "tabs" }, tabs), form));
-  user.focus();
+  ];
+  if (google) parts.push(google);
+  if (ME.password_login !== false) {
+    if (google) parts.push(h("p", { class: "muted or" }, "or with a username"));
+    parts.push(h("div", { class: "tabs" }, tabs), form);
+  } else {
+    parts.push(err);
+  }
+  app.replaceChildren(h("div", { class: "auth panel" }, parts));
+  if (ME.password_login !== false) user.focus();
 }
 
 // ---------------------------------------------------------------- challenge list

@@ -12,6 +12,7 @@ Settings come from environment variables. See web/README.md.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -22,12 +23,15 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -56,11 +60,29 @@ BASE_URL = _env("ASC_BASE_URL", "https://ellm.nrp-nautilus.io/v1")
 API_KEY = _read_secret("ASC_API_KEY")
 MODELS = [m.strip() for m in _env("ASC_MODELS", "gpt-oss,gemma-small").split(",") if m.strip()]
 INVITE_CODE = _read_secret("ASC_INVITE_CODE")
-ADMINS = {u.strip().lower() for u in _env("ASC_ADMINS").split(",") if u.strip()}
+ADMINS = {u.strip().lower() for u in _env("ASC_ADMINS").split(",") if u.strip()}   # usernames or Google emails
 MAX_CONCURRENT = int(_env("ASC_MAX_CONCURRENT", "2"))     # NRP caps parallel requests per key
 HOURLY_LIMIT = int(_env("ASC_HOURLY_LIMIT", "40"))         # attempts per player per hour
 COOKIE_SECURE = _env("ASC_COOKIE_SECURE", "1") != "0"      # set 0 only for plain-http local testing
 PYTHON = _env("ASC_PYTHON", sys.executable)
+
+# Sign in with Google (optional). Turned on by setting the client ID and secret from a Google
+# Cloud "OAuth client ID" (type: Web application). See web/README.md, "Sign in with Google".
+GOOGLE_CLIENT_ID = _env("ASC_GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = _read_secret("ASC_GOOGLE_CLIENT_SECRET")
+GOOGLE_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+# Default: any Google account can sign in; new accounts need the invite code if one is set.
+# To allow only some organisations instead, list their Google Workspace domains, e.g.
+# "uci.edu". That is checked against the ID token's "hd" claim, which Google sets only for
+# accounts managed by that organisation (an @gmail.com address can't fake it), and accounts
+# from a listed domain don't need the invite code.
+GOOGLE_DOMAINS = {d.strip().lower() for d in _env("ASC_GOOGLE_DOMAINS").split(",") if d.strip()}
+# The site's public address, used to build the redirect URI registered with Google,
+# e.g. https://challenges.example.edu (no trailing slash). Locally: http://localhost:8000
+PUBLIC_URL = _env("ASC_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+GOOGLE_REDIRECT_URI = PUBLIC_URL + "/api/auth/google/callback"
+# Set 0 to allow only Google sign-in (no username/password sign-up or login).
+PASSWORD_LOGIN = _env("ASC_PASSWORD_LOGIN", "1") != "0"
 # Same list as scripts/play.sh: always-thinking hosted models need a longer timeout.
 SLOW_MODELS = {"kimi", "qwen3", "qwen3-small", "glm-5", "deepseek-v4-flash", "minimax"}
 
@@ -110,6 +132,13 @@ CREATE TABLE IF NOT EXISTS attempts (
   finished REAL
 );
 CREATE INDEX IF NOT EXISTS attempts_user ON attempts(user_id, challenge);
+-- In-flight Google sign-ins: the random "state" sent to Google and the PKCE verifier.
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state_hash TEXT PRIMARY KEY,
+  verifier TEXT NOT NULL,
+  invite_ok INTEGER NOT NULL,
+  created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS solves (
   user_id INTEGER NOT NULL REFERENCES users(id),
   challenge TEXT NOT NULL,
@@ -134,6 +163,8 @@ MIGRATIONS = [
     ("attempts", "settings", "TEXT"),            # run settings, JSON (no key, no cache salt)
     ("attempts", "tokens_in", "INTEGER"),
     ("attempts", "tokens_out", "INTEGER"),
+    ("users", "google_sub", "TEXT"),             # Google account ID ("sub"); NULL for password users
+    ("users", "email", "TEXT"),                  # Google email, for admins and contact
 ]
 
 db: sqlite3.Connection
@@ -336,6 +367,8 @@ async def lifespan(_app: FastAPI):
     for table, col, typ in MIGRATIONS:
         if col not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_google ON users(google_sub) "
+               "WHERE google_sub IS NOT NULL")
     db.commit()
     db.execute("PRAGMA journal_mode=WAL")
     FLAG_KEY = _persistent_secret("flag_key")
@@ -349,9 +382,15 @@ async def lifespan(_app: FastAPI):
     if not API_KEY:
         print("[asc] warning: no ASC_API_KEY / ASC_API_KEY_FILE set; model calls will fail "
               "unless ASC_BASE_URL is a local Ollama", file=sys.stderr)
-    if not INVITE_CODE:
+    if not INVITE_CODE and PASSWORD_LOGIN:
         print("[asc] warning: no ASC_INVITE_CODE set; anyone who finds the site can sign up",
               file=sys.stderr)
+    if GOOGLE_ENABLED:
+        print(f"[asc] Google sign-in on: {('domains ' + ', '.join(sorted(GOOGLE_DOMAINS))) if GOOGLE_DOMAINS else 'any Google account' + (' (invite code for new accounts)' if INVITE_CODE else '')}, "
+              f"redirect URI {GOOGLE_REDIRECT_URI}", file=sys.stderr)
+    elif not PASSWORD_LOGIN:
+        print("[asc] warning: ASC_PASSWORD_LOGIN=0 but Google sign-in isn't configured; "
+              "nobody can sign in", file=sys.stderr)
     yield
     db.close()
 
@@ -366,6 +405,8 @@ def hash_pw(pw: str, salt: Optional[bytes] = None) -> str:
 
 
 def check_pw(pw: str, stored: str) -> bool:
+    if "$" not in stored:          # Google-only account: no password to check
+        return False
     salt, _ = stored.split("$", 1)
     return hmac.compare_digest(hash_pw(pw, bytes.fromhex(salt)), stored)
 
@@ -394,7 +435,10 @@ def require_user(request: Request) -> sqlite3.Row:
 
 
 def is_admin(user: sqlite3.Row) -> bool:
-    return user["username"].lower() in ADMINS
+    # A Google email in ASC_ADMINS is the safer form: usernames can't contain "@", so nobody can
+    # claim it by signing up with a password.
+    email = (user["email"] or "").lower() if "email" in user.keys() else ""
+    return user["username"].lower() in ADMINS or (bool(email) and email in ADMINS)
 
 
 def require_admin(user=Depends(require_user)) -> sqlite3.Row:
@@ -419,6 +463,8 @@ class Credentials(BaseModel):
 
 @app.post("/api/register")
 def register(body: Credentials, response: Response):
+    if not PASSWORD_LOGIN:
+        raise HTTPException(403, "sign up with Google")
     if INVITE_CODE and not hmac.compare_digest(body.invite_code.strip(), INVITE_CODE):
         raise HTTPException(403, "that invite code isn't right")
     name = body.username.strip()
@@ -434,6 +480,8 @@ def register(body: Credentials, response: Response):
 
 @app.post("/api/login")
 def login(body: Credentials, response: Response):
+    if not PASSWORD_LOGIN:
+        raise HTTPException(403, "sign in with Google")
     user = q1("SELECT * FROM users WHERE username=?", (body.username.strip(),))
     if not user or not check_pw(body.password, user["pw_hash"]):
         raise HTTPException(401, "wrong username or password")
@@ -450,13 +498,143 @@ def logout(request: Request, response: Response):
     return {"ok": True}
 
 
+def _auth_options() -> dict:
+    return {"invite_required": bool(INVITE_CODE), "password_login": PASSWORD_LOGIN,
+            "google": GOOGLE_ENABLED, "google_domains": sorted(GOOGLE_DOMAINS)}
+
+
 @app.get("/api/me")
 def me(request: Request):
     user = current_user(request)
     if not user:
-        return {"user": None, "invite_required": bool(INVITE_CODE)}
+        return {"user": None, **_auth_options()}
     return {"user": {"username": user["username"], "admin": is_admin(user)},
-            "models": MODELS, "invite_required": bool(INVITE_CODE)}
+            "models": MODELS, **_auth_options()}
+
+
+# ------------------------------------------------------------------ Sign in with Google
+# OpenID Connect authorization-code flow with PKCE. The browser goes to Google and comes back
+# to /api/auth/google/callback with a one-time code; the server swaps the code for an ID token
+# directly with Google over HTTPS and reads the account from it.
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+OAUTH_COOKIE = "asc_oauth"
+OAUTH_TTL = 600   # seconds a sign-in may take
+
+
+def _b64url(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _jwt_claims(token: str) -> dict:
+    """Claims of a JWT, without checking the signature. Only used on an ID token the server
+    received straight from Google's token endpoint over HTTPS, which OpenID Connect Core
+    3.1.3.7 allows in place of a signature check; aud, iss and exp are still checked."""
+    payload = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+
+def _auth_error(msg: str) -> RedirectResponse:
+    r = RedirectResponse("/?auth_error=" + urllib.parse.quote(msg), status_code=303)
+    r.delete_cookie(OAUTH_COOKIE, path="/api/auth/google")
+    return r
+
+
+@app.get("/api/auth/google/start")
+def google_start(invite: str = ""):
+    if not GOOGLE_ENABLED:
+        raise HTTPException(404, "Google sign-in isn't set up on this server")
+    ex("DELETE FROM oauth_states WHERE created<?", (time.time() - OAUTH_TTL,))
+    state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
+    invite_ok = not INVITE_CODE or hmac.compare_digest(invite.strip(), INVITE_CODE)
+    ex("INSERT INTO oauth_states VALUES (?,?,?,?)", (_token_hash(state), verifier, int(invite_ok), time.time()))
+    params = {
+        "client_id": GOOGLE_CLIENT_ID, "redirect_uri": GOOGLE_REDIRECT_URI, "response_type": "code",
+        "scope": "openid email profile", "state": state, "prompt": "select_account",
+        "code_challenge": _b64url(hashlib.sha256(verifier.encode()).digest()),
+        "code_challenge_method": "S256",
+    }
+    if len(GOOGLE_DOMAINS) == 1:
+        params["hd"] = next(iter(GOOGLE_DOMAINS))   # only a hint for the account chooser; checked below
+    r = RedirectResponse(GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params), status_code=303)
+    # Ties the sign-in to this browser, so a link with someone else's code can't sign you in.
+    r.set_cookie(OAUTH_COOKIE, state, max_age=OAUTH_TTL, httponly=True, samesite="lax",
+                 secure=COOKIE_SECURE, path="/api/auth/google")
+    return r
+
+
+def _google_exchange(code: str, verifier: str) -> dict:
+    data = urllib.parse.urlencode({
+        "code": code, "client_id": GOOGLE_CLIENT_ID, "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": GOOGLE_REDIRECT_URI, "grant_type": "authorization_code", "code_verifier": verifier,
+    }).encode()
+    req = urllib.request.Request(GOOGLE_TOKEN_URL, data=data,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        print(f"[asc] Google token exchange failed: {e.code} {detail}", file=sys.stderr)
+        raise RuntimeError("Google didn't accept the sign-in; try again") from None
+
+
+def _new_username(email: str) -> str:
+    base = re.sub(r"[^A-Za-z0-9_.-]", "", email.split("@")[0])[:28] or "player"
+    base = base if len(base) >= 3 else base + "_user"
+    name, n = base, 1
+    while q1("SELECT 1 FROM users WHERE username=?", (name,)):
+        n += 1
+        name = f"{base}{n}"
+    return name
+
+
+@app.get("/api/auth/google/callback")
+def google_callback(request: Request, state: str = "", code: str = "", error: str = ""):
+    if not GOOGLE_ENABLED:
+        raise HTTPException(404, "Google sign-in isn't set up on this server")
+    cookie = request.cookies.get(OAUTH_COOKIE, "")
+    row = q1("SELECT * FROM oauth_states WHERE state_hash=?", (_token_hash(state),)) if state else None
+    if row:
+        ex("DELETE FROM oauth_states WHERE state_hash=?", (row["state_hash"],))   # one use only
+    if error:
+        return _auth_error("Google sign-in was cancelled")
+    if not row or not cookie or not hmac.compare_digest(cookie, state) or row["created"] < time.time() - OAUTH_TTL:
+        return _auth_error("that sign-in link expired; try again")
+    try:
+        tokens = _google_exchange(code, row["verifier"])
+        claims = _jwt_claims(tokens["id_token"])
+    except (RuntimeError, KeyError, ValueError, IndexError, urllib.error.URLError) as e:
+        return _auth_error(str(e) if isinstance(e, RuntimeError) else "couldn't reach Google; try again")
+
+    if claims.get("aud") != GOOGLE_CLIENT_ID or claims.get("iss") not in ("https://accounts.google.com",
+                                                                          "accounts.google.com"):
+        return _auth_error("that sign-in wasn't meant for this site")
+    if float(claims.get("exp", 0)) < time.time():
+        return _auth_error("that sign-in expired; try again")
+    sub, email = str(claims.get("sub", "")), str(claims.get("email", "")).lower()
+    if not sub or not email or not claims.get("email_verified"):
+        return _auth_error("your Google account has no verified email address")
+    hd = str(claims.get("hd", "")).lower()
+    if GOOGLE_DOMAINS and hd not in GOOGLE_DOMAINS:
+        allowed = " or ".join("@" + d for d in sorted(GOOGLE_DOMAINS))
+        return _auth_error(f"sign in with your {allowed} Google account")
+
+    user = q1("SELECT * FROM users WHERE google_sub=?", (sub,))
+    if not user:
+        if not GOOGLE_DOMAINS and not row["invite_ok"]:
+            return _auth_error("new accounts need the invite code: type it in, then click Sign in with Google")
+        uid = ex("INSERT INTO users (username, pw_hash, created, google_sub, email) VALUES (?,?,?,?,?)",
+                 (_new_username(email), "", time.time(), sub, email))
+    else:
+        uid = user["id"]
+        if user["email"] != email:
+            ex("UPDATE users SET email=? WHERE id=?", (email, uid))
+    r = RedirectResponse("/", status_code=303)
+    r.delete_cookie(OAUTH_COOKIE, path="/api/auth/google")
+    start_session(r, uid)
+    return r
 
 
 # ------------------------------------------------------------------ challenges + attempts

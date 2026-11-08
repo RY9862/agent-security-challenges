@@ -206,3 +206,8 @@ td.mono, .mono { font-family: var(--mono); font-size: 13px; }
 .small { font-size: 13px; }
 label.inline { margin: 0; font-weight: 400; }
 .gap-below { margin-bottom: 16px; }
+
+.auth .google-signin { margin: 1rem 0; }
+.auth .google-signin button, .auth .google-signin input { width: 100%; }
+.auth .google-signin input { margin-bottom: 0.5rem; }
+.auth .or { text-align: center; margin: 0.5rem 0 1rem; }

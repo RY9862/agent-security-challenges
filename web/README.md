@@ -91,6 +91,49 @@ during a restart are marked as errors, and players can just run them again.
 
 To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy the volume.
 
+## Sign in with Google (optional)
+
+Players can sign in with any Google account (Gmail, UCI or another school) instead of a
+username and password. The first time someone signs in with Google, the site makes an account
+for them; if `ASC_INVITE_CODE` is set, they type the invite code in the box above the Google
+button that first time. After that, the Google button alone signs them in.
+
+To allow only some organisations instead (for example only UCI accounts, with no invite code),
+set `ASC_GOOGLE_DOMAINS=uci.edu`. The domain is taken from Google's `hd` claim, which only
+accounts managed by that organisation have, so an `@gmail.com` address can't pass as one.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (or use
+   one you have). Under **APIs & Services → OAuth consent screen**, choose **External**, fill
+   in the app name and your email, and add only the scopes `openid`, `email` and `profile`.
+   These are non-sensitive, so Google doesn't need to review the app. While the app is in
+   **Testing**, only the accounts you list as test users can sign in; click **Publish app**
+   when you're ready for the whole lab.
+2. Under **APIs & Services → Credentials**, create an **OAuth client ID**, type **Web
+   application**. Add an **Authorized redirect URI** for every address the site runs at:
+   - `https://<your-domain>/api/auth/google/callback` for the deployed site
+   - `http://localhost:8000/api/auth/google/callback` for testing on your laptop
+3. Save the client secret in a file, e.g. `web/secrets/google_client_secret` (git ignores
+   `web/secrets/`), and set:
+
+   ```bash
+   ASC_GOOGLE_CLIENT_ID=<id>.apps.googleusercontent.com
+   ASC_GOOGLE_CLIENT_SECRET_FILE=web/secrets/google_client_secret
+   ASC_PUBLIC_URL=https://<your-domain>        # http://localhost:8000 when testing locally
+   ```
+
+4. If you limit sign-in to a university domain, try one account from it first. A university's
+   Google Workspace admins can block third-party apps; "Access blocked" means the app needs
+   to be allowed by them, which is outside this code.
+
+To list admins by Google account, put their email in `ASC_ADMINS`
+(`ASC_ADMINS=you@uci.edu`). That's safer than a username, because usernames can't contain
+`@` and so nobody can claim the email by signing up with a password. To turn off username and
+password sign-in completely, set `ASC_PASSWORD_LOGIN=0`.
+
+Google sign-in uses the authorization-code flow with PKCE. The server swaps the code for the
+ID token directly with Google over HTTPS, then checks the token's audience, issuer, expiry,
+verified email and (if set) domain. No extra Python packages are needed.
+
 ## Settings
 
 | Variable | Default | |
@@ -99,7 +142,12 @@ To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy t
 | `ASC_BASE_URL` | NRP | Any OpenAI-compatible endpoint with tool calling |
 | `ASC_MODELS` | `gpt-oss,gemma-small` | Models players can pick; the first is the default |
 | `ASC_INVITE_CODE` / `_FILE` | (none) | Needed to sign up. If empty, anyone can sign up (a warning is logged). |
-| `ASC_ADMINS` | (none) | Comma-separated usernames with the Admin page |
+| `ASC_ADMINS` | (none) | Comma-separated usernames or Google emails with the Admin page |
+| `ASC_GOOGLE_CLIENT_ID` | (none) | Turns on Sign in with Google (with the secret below) |
+| `ASC_GOOGLE_CLIENT_SECRET` / `_FILE` | (none) | The OAuth client secret. The file form is preferred. |
+| `ASC_GOOGLE_DOMAINS` | (none) | Empty: any Google account (new accounts need the invite code, if set). Or a list of Workspace domains, e.g. `uci.edu`, to allow only those (no invite code needed). |
+| `ASC_PUBLIC_URL` | `http://localhost:8000` | The site's address; the Google redirect URI is this plus `/api/auth/google/callback` |
+| `ASC_PASSWORD_LOGIN` | `1` | Set `0` to allow only Google sign-in |
 | `ASC_MAX_CONCURRENT` | `2` | Runs sent to the model at once |
 | `ASC_HOURLY_LIMIT` | `40` | Runs per player per hour (admins exempt) |
 | `ASC_DATA_DIR` | `web/data` (`/data` in Docker) | SQLite DB, flag key, cache salt |
@@ -107,9 +155,9 @@ To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy t
 
 ## Known limits of this prototype
 
-- Passwords have no rules (this is for testing), and admin rights come from the username
-  alone: whoever first signs up with a name in `ASC_ADMINS` is an admin. Before sharing the
-  invite code, choose admin usernames that aren't obvious and create those accounts yourself.
+- Passwords have no rules (this is for testing). A username in `ASC_ADMINS` belongs to whoever
+  signs up with it first, so either create those accounts yourself before sharing the invite
+  code, or use Google sign-in and list admins by their UCI email instead.
 
 - No password reset. An admin can delete a user with
   `sqlite3 /data/asc.sqlite3 "DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username='x')"`
