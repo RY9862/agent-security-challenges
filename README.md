@@ -15,6 +15,11 @@ what actually happened. You only get the flag if your input changed what the age
 
 Grading is done in code by checking tool calls or the final state. There is no LLM judge.
 
+## Playing in a browser
+
+`web/` has a small website for playing the challenges without a terminal, meant to be hosted
+for the lab with one shared API key. See [web/README.md](web/README.md).
+
 ## Requirements
 
 - Python 3.10 or newer

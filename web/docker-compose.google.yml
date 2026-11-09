@@ -1,0 +1,14 @@
+# Sign in with Google: adds the OAuth client secret to the web service.
+# Used on top of docker-compose.yml. deploy/enable-google-signin.sh turns it on by adding
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.google.yml
+# to web/.env, so a plain `docker compose up -d --build` in web/ includes it from then on.
+services:
+  web:
+    environment:
+      ASC_GOOGLE_CLIENT_SECRET_FILE: /run/secrets/google_client_secret
+    secrets:
+      - google_client_secret
+
+secrets:
+  google_client_secret:
+    file: ./secrets/google_client_secret

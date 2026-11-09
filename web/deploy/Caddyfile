@@ -1,0 +1,13 @@
+# Reverse proxy with automatic HTTPS (Let's Encrypt). Replace the hostname with the
+# DNS name you point at the VM, put this at /etc/caddy/Caddyfile, then:
+#   sudo systemctl reload caddy
+challenges.example.org {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'"
+	}
+}
