@@ -232,7 +232,7 @@ async function renderGoogleSignup() {
 
 function renderPrivacy() {
   setNav("privacy");
-  const sec = (title, ...paras) => [h("h2", {}, title), paras.map((t) => h("p", {}, t))];
+  const sec = (title, ...paras) => [h("h2", {}, title), ...paras.map((t) => h("p", {}, t))];
   app.replaceChildren(
     h("div", { class: "page-head" }, h("h1", {}, "Privacy")),
     h("div", { class: "panel privacy-page" },
