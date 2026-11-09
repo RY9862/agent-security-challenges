@@ -17,9 +17,11 @@ services:
       - nrp_key
     volumes:
       - asc-data:/data
-    # Only the reverse proxy on this VM talks to it; it is never exposed directly.
+    # Only the reverse proxy talks to it; it is never exposed directly. ASC_BIND (in .env) is
+    # the address to listen on: 127.0.0.1 when the proxy is on this VM (the default), or the
+    # VM's private address when the proxy is another machine on the same network.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${ASC_BIND:-127.0.0.1}:8000:8000"
 
 secrets:
   nrp_key:

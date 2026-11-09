@@ -74,7 +74,9 @@ sudo systemctl reload caddy
 ```
 
 The app only listens on `127.0.0.1:8000`, so Caddy is the only thing reachable from
-outside, and it handles HTTPS. To run it without Docker, see `deploy/asc-web.service`.
+outside, and it handles HTTPS. If the reverse proxy is a different machine on a private network
+(as for codesafe-ai.cyberuci.com), set `ASC_BIND` in `.env` to the VM's private address so only
+that network can reach port 8000. To run it without Docker, see `deploy/asc-web.service`.
 
 Run **one** uvicorn worker (the default). The queue and its concurrency limit live in the
 process, so several workers would each send `ASC_MAX_CONCURRENT` runs to NRP at once.
@@ -177,6 +179,7 @@ verified email and (if set) domain. No extra Python packages are needed.
 | `ASC_HOURLY_LIMIT` | `40` | Runs per player per hour (admins exempt) |
 | `ASC_DATA_DIR` | `web/data` (`/data` in Docker) | SQLite DB, flag key, cache salt |
 | `ASC_COOKIE_SECURE` | `1` | Set `0` only for local plain-HTTP testing |
+| `ASC_BIND` | `127.0.0.1` | Docker only: the address port 8000 listens on (see "Deploy on a VM") |
 
 ## Known limits of this prototype
 
