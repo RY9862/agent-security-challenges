@@ -38,8 +38,8 @@ Running it again is safe; it updates the same settings.
 
 ## Who can sign in
 
-- Any Google account. A new account needs the invite code (`ASC_INVITE_CODE`) the first time,
-  typed in the box above the Google button, and then picks a username; returning players don't.
+- Any Google account. After Google, a new player picks a username and types the invite code
+  (`ASC_INVITE_CODE`), once; returning players go straight in.
 - To allow only UCI accounts (no invite code needed), add `ASC_GOOGLE_DOMAINS=uci.edu` to
   `web/.env` and run `docker compose up -d` in `web/`.
 - Admins: list Google emails in `ASC_ADMINS`. Google accounts are admins only by email (never
@@ -56,7 +56,8 @@ Running it again is safe; it updates the same settings.
 | `/api/me` has `"google":false` | The secret didn't load. Check `web/secrets/google_client_secret` exists, `COMPOSE_FILE` in `web/.env` includes `docker-compose.google.yml`, and look for `[asc]` lines in `docker compose logs web`. |
 | `/api/me` has no `"google"` key | The old code is still running: check the branch, then rebuild. |
 | Google says "Access blocked" / "not a test user" | Ask Ryan to add the account as a test user, or to publish the app. |
-| Back on the site, signed out, with no error | The reverse proxy dropped the cookie or the `?state=…&code=…` query. Make sure `/api/auth/google/callback` is passed to the app unchanged. |
+| Back on the site, signed out, with no error | The reverse proxy dropped the `?state=…&code=…` query. Make sure `/api/auth/google/callback` is passed to the app unchanged. |
+| "your browser didn't keep the sign-in cookie" | Cookies are blocked for the site (or it was opened at a different address than `ASC_PUBLIC_URL`). The app log has a `[asc] Google sign-in refused` line. |
 | "That sign-in link expired" | Start again from the site's button; a sign-in is valid for 10 minutes and only once. |
 
 To turn it off again: remove `ASC_GOOGLE_CLIENT_ID` and the `COMPOSE_FILE` line from

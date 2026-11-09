@@ -94,10 +94,10 @@ To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy t
 ## Sign in with Google (optional)
 
 Players can sign in with any Google account (Gmail, UCI or another school) instead of a
-username and password. The first time someone signs in with Google, they choose a username
-(it's shown on the scoreboard, so it's never made from their email); if `ASC_INVITE_CODE` is
-set, they also type the invite code in the box above the Google button that first time. After
-that, the Google button alone signs them in.
+username and password. The login page has just the Google button. The first time someone signs
+in with Google, the site then asks them to choose a username (it's shown on the scoreboard, so
+it's never made from their email) and, if `ASC_INVITE_CODE` is set, the invite code. After that,
+the Google button alone signs them in.
 
 The site asks Google only for `openid email` and stores the account ID (`sub`), the email and
 the Workspace domain (`hd`, empty for Gmail). The email is never shown to other players or put

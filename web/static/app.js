@@ -4,6 +4,7 @@
 
 const app = document.getElementById("app");
 let ME = null;          // {user, models}
+let AUTH_MSG = "";      // an error to show once on the sign-in page (e.g. from Google sign-in)
 let pollTimer = null;
 
 // ---------------------------------------------------------------- helpers
@@ -69,6 +70,7 @@ function setNav(name) {
 
 async function route() {
   clearTimeout(pollTimer);
+  if (location.pathname === "/api/auth/google/callback") return finishGoogle();
   if (!ME) {
     try { ME = await api("/api/me"); } catch (e) { app.replaceChildren(h("p", { class: "error-text" }, e.message)); return; }
   }
@@ -103,12 +105,8 @@ document.getElementById("logout").addEventListener("click", async () => {
 function renderAuth() {
   let mode = "login";
   const err = h("p", { class: "error-text" });
-  // A failed Google sign-in comes back as /?auth_error=...; show it once, then tidy the URL.
-  const params = new URLSearchParams(location.search);
-  if (params.get("auth_error")) {
-    err.textContent = params.get("auth_error");
-    history.replaceState(null, "", location.pathname + location.hash);
-  }
+  const firstMsg = AUTH_MSG;
+  AUTH_MSG = "";
   const user = h("input", { name: "username", autocomplete: "username", required: true });
   const pw = h("input", { name: "password", type: "password", autocomplete: "current-password" });
   const invite = h("input", { name: "invite", autocomplete: "off" });
@@ -121,8 +119,7 @@ function renderAuth() {
     inviteRow.hidden = mode === "login" || !ME.invite_required;
     pw.autocomplete = mode === "login" ? "current-password" : "new-password";
     submit.textContent = mode === "login" ? "Sign in" : "Create account";
-    if (!params.get("auth_error")) err.textContent = "";
-    params.delete("auth_error");
+    err.textContent = "";
   }
   const form = h("form", {
     onsubmit: async (ev) => {
@@ -139,27 +136,30 @@ function renderAuth() {
     h("div", {}, h("label", {}, "Password"), pw),
     inviteRow, err, submit);
 
-  // Sign in with Google. New accounts need the invite code unless the server limits Google
-  // sign-in to some organisations (google_domains), so there's a box for it next to the button.
+  // Sign in with Google. New players are asked for a username (and the invite code, if one is
+  // set) after Google, so the button alone is enough here.
   const domains = ME.google_domains || [];
-  const needInvite = !domains.length && ME.invite_required;
-  const googleInvite = h("input", { name: "google-invite", autocomplete: "off",
-                                    placeholder: "Invite code (first time only)" });
+  const gErr = h("p", { class: "error-text" });
+  const gButton = h("button", {
+    type: "button", class: "primary",
+    onclick: async () => {
+      gButton.disabled = true; gErr.textContent = "";
+      try {
+        const { url } = await api("/api/auth/google/start", { body: {} });
+        location.href = url;
+      } catch (e) { gErr.textContent = e.message; gButton.disabled = false; }
+    },
+  }, "Sign in with Google");
   const google = ME.google ? h("div", { class: "google-signin" },
-    needInvite ? googleInvite : null,
-    h("button", {
-      type: "button", class: "primary",
-      onclick: () => {
-        const code = googleInvite.value || invite.value;
-        location.href = "/api/auth/google/start" + (code ? "?invite=" + encodeURIComponent(code) : "");
-      },
-    }, "Sign in with Google"),
-    domains.length
-      ? h("p", { class: "muted" }, `Use your ${domains.map((d) => "@" + d).join(" or ")} Google account.`)
-      : (needInvite ? h("p", { class: "muted" }, "Any Google account. The invite code is only needed the first time.") : null),
+    gButton,
+    h("p", { class: "muted" }, domains.length
+      ? `Use your ${domains.map((d) => "@" + d).join(" or ")} Google account.`
+      : "Any Google account. New here? You'll pick a username" + (ME.invite_required ? " and enter the invite code" : "") + " next."),
+    gErr,
   ) : null;
 
   sync();
+  if (firstMsg) (google ? gErr : err).textContent = firstMsg;
   const parts = [
     h("h1", {}, "Agent Injection Lab"),
     h("p", { class: "muted" }, "CTF challenges where you attack an AI agent that uses tools."),
@@ -168,8 +168,6 @@ function renderAuth() {
   if (ME.password_login !== false) {
     if (google) parts.push(h("p", { class: "muted or" }, "or with a username"));
     parts.push(h("div", { class: "tabs" }, tabs), form);
-  } else {
-    parts.push(err);
   }
   parts.push(privacyNote());
   app.replaceChildren(h("div", { class: "auth panel" }, parts));
@@ -185,18 +183,32 @@ function privacyNote() {
     "account and all of this at any time from the Account page.");
 }
 
-// First Google sign-in: the server has checked the Google account and now asks for a username,
-// so we never make one from the person's email address (it would show on the scoreboard).
+// Google sends the browser back to /api/auth/google/callback?state=..&code=..; hand those to
+// the server with a same-origin request (the sign-in cookie always comes along on those).
+async function finishGoogle() {
+  const p = new URLSearchParams(location.search);
+  const body = { state: p.get("state") || "", code: p.get("code") || "", error: p.get("error") || "" };
+  history.replaceState(null, "", "/");   // the code is single-use; keep it out of history
+  ME = null;
+  try {
+    const r = await api("/api/auth/google/finish", { body });
+    if (r.signup) history.replaceState(null, "", "/?google_signup=1");
+  } catch (e) { AUTH_MSG = e.message; }
+  return route();
+}
+
+// First Google sign-in: the server has checked the Google account and now asks for a username
+// (we never make one from the email address; it would show on the scoreboard) and the invite code.
 async function renderGoogleSignup() {
-  const done = () => { history.replaceState(null, "", location.pathname + location.hash); ME = null; };
+  const done = () => { history.replaceState(null, "", "/"); ME = null; };
   let info;
   try { info = await api("/api/auth/google/signup"); } catch (e) {
-    done();
-    history.replaceState(null, "", "/?auth_error=" + encodeURIComponent(e.message));
+    done(); AUTH_MSG = e.message;
     return route();
   }
   const err = h("p", { class: "error-text" });
   const name = h("input", { name: "username", autocomplete: "off", required: true, minLength: 3, maxLength: 32 });
+  const invite = h("input", { name: "invite", autocomplete: "off", required: true });
   const submit = h("button", { class: "primary", type: "submit" }, "Create account");
   app.replaceChildren(h("div", { class: "auth panel" },
     h("h1", {}, "Choose a username"),
@@ -205,7 +217,7 @@ async function renderGoogleSignup() {
       onsubmit: async (ev) => {
         ev.preventDefault(); submit.disabled = true; err.textContent = "";
         try {
-          await api("/api/auth/google/signup", { body: { username: name.value } });
+          await api("/api/auth/google/signup", { body: { username: name.value, invite_code: invite.value } });
           done(); route();
         } catch (e) { err.textContent = e.message; }
         submit.disabled = false;
@@ -214,6 +226,8 @@ async function renderGoogleSignup() {
       h("div", {}, h("label", {}, "Username"), name),
       h("p", { class: "muted small" }, "3–32 letters, digits, _ . or -. Other players see it on the " +
         "scoreboard, so you may not want to use your name or email."),
+      info.invite_required ? h("div", {}, h("label", {}, "Invite code"), invite,
+        h("p", { class: "muted small" }, "Only needed this once.")) : null,
       err, submit),
     privacyNote()));
   name.focus();
