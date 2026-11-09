@@ -248,7 +248,8 @@ CHECKS = [
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("challenges", nargs="*", default=["all"], help="1-5 or 'all'")
+    ap.add_argument("challenges", nargs="*", default=["all"],
+                    help="1-5, 'all', or the folder of a challenge (e.g. one made by pipeline/generate.py)")
     ap.add_argument("--results", type=Path, action="append", default=[],
                     help="folder(s) with harness TSVs, e.g. evals/ (may repeat)")
     ap.add_argument("--out", type=Path, help="also write the table to this Markdown file")
@@ -258,7 +259,9 @@ def main() -> int:
 
     table = {}
     for k in keys:
-        ch = ROOT / "challenges" / CHALLENGES[k]
+        ch = ROOT / "challenges" / CHALLENGES[k] if k in CHALLENGES else Path(k).resolve()
+        if not (ch / "challenge" / "run").exists():
+            sys.exit(f"{k}: not a challenge number or a challenge folder")
         print(f"checking {ch.name} ...", file=sys.stderr, flush=True)
         table[ch.name] = {
             "1A.1": check_builds(ch),

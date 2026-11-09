@@ -1,0 +1,2 @@
+# Generation pipeline only (pipeline/). The challenges themselves need just ../requirements.txt.
+agentdojo==0.1.35   # read the source task, data and ground truth; never imported by a challenge

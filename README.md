@@ -190,6 +190,8 @@ leave out `solutions/`, and make sure the container can reach the model server.
 - `rubric/RUBRIC-v1.md` is the frozen rubric for judging a challenge (correctness, contextual fit,
   coherence, pedagogical alignment). `scripts/rubric_check.py` runs its scripted checks, and
   `rubric/dry-run-v1.md` has the scores for the five challenges here.
+- `pipeline/` generates new challenges from benchmark tasks with an LLM, following `DESIGN.md`
+  step by step, and checks each step against the benchmark. See `pipeline/README.md`.
 - `THIRD_PARTY_NOTICES.md` lists where the reused code and data come from.
 - Tests run offline with a fake model. Run each challenge separately, since the challenges
   share module names: `for d in challenges/*/; do python -m pytest -q "$d/tests"; done`.
