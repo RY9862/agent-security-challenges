@@ -609,7 +609,12 @@ def google_start(invite: str = ""):
         params["hd"] = next(iter(GOOGLE_DOMAINS))   # only a hint for the account chooser; checked below
     r = RedirectResponse(GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params), status_code=303)
     # Ties the sign-in to this browser, so a link with someone else's code can't sign you in.
-    r.set_cookie(OAUTH_COOKIE, state, max_age=OAUTH_TTL, httponly=True, samesite="lax",
+    # SameSite=None: the way back from Google can be a cross-site redirect chain (e.g. through
+    # a university's own login page), on which some browsers drop Lax cookies. The cookie holds
+    # only the random state, is HttpOnly, path-limited and lives 10 minutes. Browsers require
+    # Secure with None, so plain-http local testing keeps Lax.
+    r.set_cookie(OAUTH_COOKIE, state, max_age=OAUTH_TTL, httponly=True,
+                 samesite="none" if COOKIE_SECURE else "lax",
                  secure=COOKIE_SECURE, path="/api/auth/google")
     return r
 
@@ -640,8 +645,13 @@ def google_callback(request: Request, state: str = "", code: str = "", error: st
         ex("DELETE FROM oauth_states WHERE state_hash=?", (row["state_hash"],))   # one use only
     if error:
         return _auth_error("Google sign-in was cancelled")
-    if not row or not cookie or not hmac.compare_digest(cookie, state) or row["created"] < time.time() - OAUTH_TTL:
+    if not row or row["created"] < time.time() - OAUTH_TTL:
         return _auth_error("that sign-in link expired; try again")
+    if not cookie or not hmac.compare_digest(cookie, state):
+        print(f"[asc] Google sign-in refused: state cookie {'missing' if not cookie else 'mismatched'}",
+              file=sys.stderr)
+        return _auth_error("your browser didn't keep the sign-in cookie. Allow cookies for this site, "
+                           "then start again from the Sign in with Google button")
     try:
         tokens = _google_exchange(code, row["verifier"])
         claims = _jwt_claims(tokens["id_token"])
