@@ -9,3 +9,4 @@ web/data/
 web/.env
 web/.env.bak-*
 web/secrets/
+generated/
