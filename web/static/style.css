@@ -211,7 +211,9 @@ label.inline { margin: 0; font-weight: 400; }
 .auth .google-signin button, .auth .google-signin input { width: 100%; }
 .auth .google-signin input { margin-bottom: 0.5rem; }
 .auth .or { text-align: center; margin: 0.5rem 0 1rem; }
-.auth .privacy { font-size: 13px; margin-top: 1rem; }
+.privacy-page h2 { font-size: 16px; margin: 16px 0 6px; }
+.privacy-page h2:first-child { margin-top: 0; }
+.foot a { color: inherit; }
 .who a { color: inherit; }
 .account dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
 .account dt { color: var(--muted); }

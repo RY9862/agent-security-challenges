@@ -101,7 +101,7 @@ the Google button alone signs them in.
 
 The site asks Google only for `openid email` and stores the account ID (`sub`), the email and
 the Workspace domain (`hd`, empty for Gmail). The email is never shown to other players or put
-in the admin exports. The login page says what is recorded, and players can delete their
+in the admin exports. The Privacy page (footer link) says what is recorded, and players can delete their
 account and all their data from the Account page (click your username, top right).
 
 To allow only some organisations instead (for example only UCI accounts, with no invite code),

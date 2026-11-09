@@ -77,6 +77,7 @@ async function route() {
   const signedIn = !!ME.user;
   document.getElementById("nav").hidden = !signedIn;
   document.getElementById("who").hidden = !signedIn;
+  if (location.hash.replace(/^#\/?/, "") === "privacy") return renderPrivacy();
   if (!signedIn) {
     return new URLSearchParams(location.search).get("google_signup") ? renderGoogleSignup() : renderAuth();
   }
@@ -169,18 +170,12 @@ function renderAuth() {
     if (google) parts.push(h("p", { class: "muted or" }, "or with a username"));
     parts.push(h("div", { class: "tabs" }, tabs), form);
   }
-  parts.push(privacyNote());
   app.replaceChildren(h("div", { class: "auth panel" }, parts));
   if (ME.password_login !== false) user.focus();
 }
 
-function privacyNote() {
-  return h("p", { class: "muted privacy" },
-    "What we keep: your username, and if you use Google, your Google email and account ID (used " +
-    "only to sign you in and to recognise admins; never shown to other players). Your attempts " +
-    "(what you type and how the agent responds), solves and which challenges you open are " +
-    "recorded for research. Your username appears on the scoreboard. You can delete your " +
-    "account and all of this at any time from the Account page.");
+function privacyLink(text = "What we keep and why") {
+  return h("p", { class: "muted small" }, h("a", { href: "#/privacy" }, text));
 }
 
 // Google sends the browser back to /api/auth/google/callback?state=..&code=..; hand those to
@@ -229,8 +224,37 @@ async function renderGoogleSignup() {
       info.invite_required ? h("div", {}, h("label", {}, "Invite code"), invite,
         h("p", { class: "muted small" }, "Only needed this once.")) : null,
       err, submit),
-    privacyNote()));
+    privacyLink()));
   name.focus();
+}
+
+// ---------------------------------------------------------------- privacy
+
+function renderPrivacy() {
+  setNav("privacy");
+  const sec = (title, ...paras) => [h("h2", {}, title), paras.map((t) => h("p", {}, t))];
+  app.replaceChildren(
+    h("div", { class: "page-head" }, h("h1", {}, "Privacy")),
+    h("div", { class: "panel privacy-page" },
+      sec("What we keep",
+        "Your username. If you sign in with a username, a hash of your password (never the password itself). " +
+        "If you sign in with Google, your Google email address, Google's ID for your account and, for " +
+        "organisation accounts (e.g. @uci.edu), the organisation's domain. We ask Google for nothing else: " +
+        "no name, photo or contacts.",
+        "What you do here: each attempt (what you type, the agent's tool calls and responses, and whether it " +
+        "succeeded), your solves, and when you open each challenge."),
+      sec("Why",
+        "Your Google email and account ID are used only to sign you in and to recognise the site's admins. " +
+        "Attempts, solves and challenge views are recorded for research into how AI agents can be attacked " +
+        "and defended."),
+      sec("Who can see it",
+        "Other players see your username and your solves on the scoreboard. Your email is never shown to " +
+        "other players and is not included in research exports. The site's admins can see attempts and " +
+        "player progress."),
+      sec("Deleting your data",
+        "You can delete your account at any time from the Account page (click your username, top right). " +
+        "That removes your account and all your attempts, solves and challenge views. It can't be undone."),
+      h("p", {}, h("a", { href: "#/" }, ME && ME.user ? "Back to the challenges" : "Back to sign in"))));
 }
 
 // ---------------------------------------------------------------- account
@@ -248,7 +272,7 @@ async function renderAccount() {
         h("dt", {}, "Username"), h("dd", {}, u.username),
         h("dt", {}, "Signs in with"), h("dd", {}, u.google ? "Google" : "Username and password"),
         u.google ? [h("dt", {}, "Google email"), h("dd", {}, u.email, h("span", { class: "muted" }, " (not shown to other players)"))] : null),
-      privacyNote(),
+      privacyLink(),
       h("form", {
         class: "danger",
         onsubmit: async (ev) => {
