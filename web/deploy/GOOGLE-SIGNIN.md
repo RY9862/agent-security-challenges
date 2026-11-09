@@ -56,9 +56,19 @@ Running it again is safe; it updates the same settings.
 | `/api/me` has `"google":false` | The secret didn't load. Check `web/secrets/google_client_secret` exists, `COMPOSE_FILE` in `web/.env` includes `docker-compose.google.yml`, and look for `[asc]` lines in `docker compose logs web`. |
 | `/api/me` has no `"google"` key | The old code is still running: check the branch, then rebuild. |
 | Google says "Access blocked" / "not a test user" | Ask Ryan to add the account as a test user, or to publish the app. |
-| Back on the site, signed out, with no error | The reverse proxy dropped the `?state=…&code=…` query. Make sure `/api/auth/google/callback` is passed to the app unchanged. |
+| "that sign-in link expired" right after Google | If it wasn't really 10 minutes, the reverse proxy dropped the `?state=…&code=…` query. Make sure `/api/auth/google/callback` is passed to the app unchanged. |
 | "your browser didn't keep the sign-in cookie" | Cookies are blocked for the site (or it was opened at a different address than `ASC_PUBLIC_URL`). The app log has a `[asc] Google sign-in refused` line. |
 | "That sign-in link expired" | Start again from the site's button; a sign-in is valid for 10 minutes and only once. |
+
+## Replacing the client secret
+
+1. In the Google Cloud console, **APIs & Services → Credentials**, open the OAuth client and
+   click **Add secret**. Copy the new one.
+2. On the server, run the script again with the **same** admin list (it replaces the list):
+   `web/deploy/enable-google-signin.sh --admins <current ASC_ADMINS>`, answer `y` to
+   replace the saved secret, and paste the new one.
+3. Check `curl -s https://codesafe-ai.cyberuci.com/api/me` still says `"google":true` and that
+   signing in works, then **disable** the old secret on the OAuth client.
 
 To turn it off again: remove `ASC_GOOGLE_CLIENT_ID` and the `COMPOSE_FILE` line from
 `web/.env`, then `docker compose up -d` in `web/`. Username/password sign-in keeps working.

@@ -66,6 +66,7 @@ if [ -n "${VALUE:-}" ]; then
   case "$VALUE" in GOCSPX-*) ;; *) echo "Note: Google client secrets usually start with GOCSPX-. Saving it anyway." ;; esac
   mkdir -p "$WEB/secrets" && chmod 700 "$WEB/secrets"
   umask 077
+  rm -f "$SECRET"   # an earlier run left it read-only (400), so replace rather than overwrite
   printf '%s\n' "$VALUE" > "$SECRET"
   unset VALUE
   echo "Saved the secret to web/secrets/google_client_secret"

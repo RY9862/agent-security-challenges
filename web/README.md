@@ -1,8 +1,8 @@
 # Web front end (temporary)
 
 A small website so lab members can play the challenges in a browser instead of the
-terminal, until the challenges move into Codesafe. Players sign up with an invite code,
-pick a challenge, type their input, and watch the agent's tool calls as they happen. The
+terminal, until the challenges move into Codesafe. Players sign in with Google (or a username
+and password) and an invite code the first time, pick a challenge, type their input, and watch the agent's tool calls as they happen. The
 page shows the same trace, final reply, verdict and flag as `scripts/play.sh`.
 
 ```
@@ -28,7 +28,7 @@ browser ──HTTPS──▶ Caddy ──▶ uvicorn (web/server.py) ──spawn
 - **Flags are per player:** `asc{NN_<hmac of challenge and user>}`. A solve is recorded as
   soon as the grader passes, so there's nothing to submit. The scoreboard shows who solved
   what.
-- **Admin page** (users listed in `ASC_ADMINS`): the success rate per challenge and model
+- **Admin page** (Google emails or usernames listed in `ASC_ADMINS`): the success rate per challenge and model
   from real player attempts, every attempt with its full trace, and a JSONL export.
   Useful for seeing which inputs students try and how often the challenge resists them.
 - **Nothing from `solutions/`, `tests/` or `SOLUTIONS-SPOILERS.md` is served** or copied
@@ -89,7 +89,20 @@ Accounts, attempts and solves are in the `asc-data` volume and survive rebuilds.
 flag key and the NRP cache salt, so players' flags don't change. Runs that were in progress
 during a restart are marked as errors, and players can just run them again.
 
-To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy the volume.
+To back up (the image has no `sqlite3` binary, so this uses Python's backup API, which is safe
+while the site is running):
+
+```bash
+# in web/
+docker compose exec -T web python -c "import sqlite3; d = sqlite3.connect('/data/backup.sqlite3'); sqlite3.connect('/data/asc.sqlite3').backup(d); d.close()"
+docker compose cp web:/data/backup.sqlite3 ~/asc-backup-$(date +%F).sqlite3
+docker compose exec -T web rm /data/backup.sqlite3
+chmod 600 ~/asc-backup-*.sqlite3     # it has emails, password hashes and every attempt
+```
+
+To restore, stop the site (`docker compose stop web`), copy the file back into the volume as
+`/data/asc.sqlite3` (`docker compose cp`), and start it again. Copying the whole `asc-data`
+volume works too.
 
 ## Sign in with Google (optional)
 
@@ -129,7 +142,9 @@ accounts managed by that organisation have, so an `@gmail.com` address can't pas
    ASC_PUBLIC_URL=http://localhost:8000
    ```
 
-4. If you limit sign-in to a university domain, try one account from it first. A university's
+4. Before sharing the site, click **Publish app** on the consent screen (see step 1), or only
+   your listed test users can sign in.
+5. If you limit sign-in to a university domain, try one account from it first. A university's
    Google Workspace admins can block third-party apps; "Access blocked" means the app needs
    to be allowed by them, which is outside this code.
 
@@ -151,7 +166,7 @@ verified email and (if set) domain. No extra Python packages are needed.
 | `ASC_API_KEY_FILE` / `ASC_API_KEY` | (none) | Model API key. The file form is preferred. |
 | `ASC_BASE_URL` | NRP | Any OpenAI-compatible endpoint with tool calling |
 | `ASC_MODELS` | `gpt-oss,gemma-small` | Models players can pick; the first is the default |
-| `ASC_INVITE_CODE` / `_FILE` | (none) | Needed to sign up. If empty, anyone can sign up (a warning is logged). |
+| `ASC_INVITE_CODE` / `_FILE` | (none) | Needed to make an account: on the password sign-up form, or once after the first Google sign-in. If empty, anyone can sign up (a warning is logged). |
 | `ASC_ADMINS` | (none) | Comma-separated Google emails (for Google accounts) or usernames (for password accounts) with the Admin page |
 | `ASC_GOOGLE_CLIENT_ID` | (none) | Turns on Sign in with Google (with the secret below) |
 | `ASC_GOOGLE_CLIENT_SECRET` / `_FILE` | (none) | The OAuth client secret. The file form is preferred. |
@@ -171,8 +186,19 @@ verified email and (if set) domain. No extra Python packages are needed.
 - A password account and a Google account are separate, even for the same person; there's no
   linking. Someone switching to Google starts with a new account.
 - No password reset. Players can delete their own account (Account page). An admin can delete
-  one from the server:
-  `docker compose exec web sqlite3 /data/asc.sqlite3 "PRAGMA foreign_keys=ON; DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM views WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM solves WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM attempts WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM users WHERE username='x';"`
+  one from the server (replace `x` with the username; this removes their attempts, solves and
+  page views too):
+
+  ```bash
+  # in web/
+  docker compose exec -T web python -c "
+  import sqlite3, sys; c = sqlite3.connect('/data/asc.sqlite3')
+  (uid,) = c.execute('SELECT id FROM users WHERE username=?', (sys.argv[1],)).fetchone()
+  with c:
+      for t in ('sessions', 'views', 'solves', 'attempts'): c.execute(f'DELETE FROM {t} WHERE user_id=?', (uid,))
+      c.execute('DELETE FROM users WHERE id=?', (uid,))
+  print('deleted', sys.argv[1])" x
+  ```
 - Model calls on NRP took 10–45 s each during testing, so a run can take a few minutes. The
   page shows each tool call as it happens, so players aren't watching a blank spinner.
 - Only one instance of the server can run at a time (SQLite and an in-process queue). That
