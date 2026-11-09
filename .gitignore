@@ -7,4 +7,5 @@ logs/
 evals/
 web/data/
 web/.env
+web/.env.bak-*
 web/secrets/

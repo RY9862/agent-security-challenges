@@ -112,13 +112,15 @@ accounts managed by that organisation have, so an `@gmail.com` address can't pas
    application**. Add an **Authorized redirect URI** for every address the site runs at:
    - `https://<your-domain>/api/auth/google/callback` for the deployed site
    - `http://localhost:8000/api/auth/google/callback` for testing on your laptop
-3. Save the client secret in a file, e.g. `web/secrets/google_client_secret` (git ignores
-   `web/secrets/`), and set:
+3. On the server, run `web/deploy/enable-google-signin.sh` and paste the client secret when
+   asked. It saves the secret, sets `ASC_GOOGLE_CLIENT_ID` and `ASC_PUBLIC_URL`, adds
+   `docker-compose.google.yml`, rebuilds and checks the site. Step by step, with fixes for common
+   problems: `deploy/GOOGLE-SIGNIN.md`. Locally, set the variables yourself:
 
    ```bash
    ASC_GOOGLE_CLIENT_ID=<id>.apps.googleusercontent.com
    ASC_GOOGLE_CLIENT_SECRET_FILE=web/secrets/google_client_secret
-   ASC_PUBLIC_URL=https://<your-domain>        # http://localhost:8000 when testing locally
+   ASC_PUBLIC_URL=http://localhost:8000
    ```
 
 4. If you limit sign-in to a university domain, try one account from it first. A university's

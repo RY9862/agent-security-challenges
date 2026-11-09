@@ -11,5 +11,6 @@ challenges/*/tests
 challenges/*/harness.py
 web/data
 web/.env
+web/.env.bak-*
 web/secrets
 scripts
