@@ -211,3 +211,10 @@ label.inline { margin: 0; font-weight: 400; }
 .auth .google-signin button, .auth .google-signin input { width: 100%; }
 .auth .google-signin input { margin-bottom: 0.5rem; }
 .auth .or { text-align: center; margin: 0.5rem 0 1rem; }
+.auth .privacy { font-size: 13px; margin-top: 1rem; }
+.who a { color: inherit; }
+.account dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 16px; }
+.account dt { color: var(--muted); }
+.account dd { margin: 0; }
+.account .danger { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px; }
+.account .danger input { max-width: 260px; margin-right: 8px; }

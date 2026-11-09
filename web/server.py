@@ -139,6 +139,14 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   invite_ok INTEGER NOT NULL,
   created REAL NOT NULL
 );
+-- Google accounts that signed in for the first time and haven't picked a username yet.
+CREATE TABLE IF NOT EXISTS google_signups (
+  token_hash TEXT PRIMARY KEY,
+  sub TEXT NOT NULL,
+  email TEXT NOT NULL,
+  hd TEXT NOT NULL,
+  created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS solves (
   user_id INTEGER NOT NULL REFERENCES users(id),
   challenge TEXT NOT NULL,
@@ -165,6 +173,7 @@ MIGRATIONS = [
     ("attempts", "tokens_out", "INTEGER"),
     ("users", "google_sub", "TEXT"),             # Google account ID ("sub"); NULL for password users
     ("users", "email", "TEXT"),                  # Google email, for admins and contact
+    ("users", "google_hd", "TEXT"),              # Workspace domain ("hd" claim); "" for Gmail
 ]
 
 db: sqlite3.Connection
@@ -434,11 +443,27 @@ def require_user(request: Request) -> sqlite3.Row:
     return user
 
 
+# Google itself owns these addresses, so a verified email there is proof of the address.
+CONSUMER_GOOGLE_DOMAINS = {"gmail.com", "googlemail.com"}
+
+
+def _google_owns_email(email: str, hd: str) -> bool:
+    """Whether a Google sign-in proves the person owns this address. A Google account can be
+    registered with a non-Gmail address (e.g. someone@uci.edu as a personal Google account,
+    without UCI's Workspace), so outside Gmail we also require the "hd" claim, which Google sets
+    only for accounts the organisation that owns the domain manages."""
+    domain = email.rsplit("@", 1)[-1].lower()
+    return domain in CONSUMER_GOOGLE_DOMAINS or (hd or "").lower() == domain
+
+
 def is_admin(user: sqlite3.Row) -> bool:
-    # A Google email in ASC_ADMINS is the safer form: usernames can't contain "@", so nobody can
-    # claim it by signing up with a password.
-    email = (user["email"] or "").lower() if "email" in user.keys() else ""
-    return user["username"].lower() in ADMINS or (bool(email) and email in ADMINS)
+    # Google accounts are admins only by their email, never by username, so a Google user can't
+    # pick an unclaimed username from ASC_ADMINS. Usernames can't contain "@", so nobody can
+    # claim an admin email by signing up with a password.
+    if user["google_sub"]:
+        email = (user["email"] or "").lower()
+        return bool(email) and email in ADMINS and _google_owns_email(email, user["google_hd"] or "")
+    return user["username"].lower() in ADMINS
 
 
 def require_admin(user=Depends(require_user)) -> sqlite3.Row:
@@ -461,17 +486,22 @@ class Credentials(BaseModel):
     invite_code: str = ""
 
 
+def _check_new_username(raw: str) -> str:
+    name = raw.strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", name):
+        raise HTTPException(400, "username: 3-32 letters, digits, _ . or -")
+    if q1("SELECT 1 FROM users WHERE username=?", (name,)):
+        raise HTTPException(409, "that username is taken")
+    return name
+
+
 @app.post("/api/register")
 def register(body: Credentials, response: Response):
     if not PASSWORD_LOGIN:
         raise HTTPException(403, "sign up with Google")
     if INVITE_CODE and not hmac.compare_digest(body.invite_code.strip(), INVITE_CODE):
         raise HTTPException(403, "that invite code isn't right")
-    name = body.username.strip()
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", name):
-        raise HTTPException(400, "username: 3-32 letters, digits, _ . or -")
-    if q1("SELECT 1 FROM users WHERE username=?", (name,)):
-        raise HTTPException(409, "that username is taken")
+    name = _check_new_username(body.username)
     uid = ex("INSERT INTO users (username, pw_hash, created) VALUES (?,?,?)",
              (name, hash_pw(body.password), time.time()))
     start_session(response, uid)
@@ -508,8 +538,27 @@ def me(request: Request):
     user = current_user(request)
     if not user:
         return {"user": None, **_auth_options()}
-    return {"user": {"username": user["username"], "admin": is_admin(user)},
+    return {"user": {"username": user["username"], "admin": is_admin(user),
+                     "google": bool(user["google_sub"]), "email": user["email"] or ""},
             "models": MODELS, **_auth_options()}
+
+
+@app.post("/api/account/delete")
+def delete_account(body: dict, response: Response, user=Depends(require_user)):
+    """Delete the signed-in player's account and everything recorded about them: sessions,
+    attempts (inputs, traces, model output), solves and page views."""
+    if str(body.get("confirm", "")).strip().lower() != user["username"].lower():
+        raise HTTPException(400, "type your username to confirm")
+    if q1("SELECT 1 FROM attempts WHERE user_id=? AND status IN ('queued','running')", (user["id"],)):
+        raise HTTPException(409, "wait for your running attempt to finish first")
+    uid = user["id"]
+    with db:   # all or nothing
+        for table in ("sessions", "views", "solves", "attempts"):
+            db.execute(f"DELETE FROM {table} WHERE user_id=?", (uid,))
+        db.execute("DELETE FROM users WHERE id=?", (uid,))
+    response.delete_cookie(SESSION_COOKIE)
+    print(f"[asc] account {uid} deleted by its owner", file=sys.stderr)
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ Sign in with Google
@@ -520,6 +569,7 @@ def me(request: Request):
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 OAUTH_COOKIE = "asc_oauth"
+SIGNUP_COOKIE = "asc_google_signup"   # a first-time Google sign-in that still needs a username
 OAUTH_TTL = 600   # seconds a sign-in may take
 
 
@@ -551,7 +601,7 @@ def google_start(invite: str = ""):
     ex("INSERT INTO oauth_states VALUES (?,?,?,?)", (_token_hash(state), verifier, int(invite_ok), time.time()))
     params = {
         "client_id": GOOGLE_CLIENT_ID, "redirect_uri": GOOGLE_REDIRECT_URI, "response_type": "code",
-        "scope": "openid email profile", "state": state, "prompt": "select_account",
+        "scope": "openid email", "state": state, "prompt": "select_account",
         "code_challenge": _b64url(hashlib.sha256(verifier.encode()).digest()),
         "code_challenge_method": "S256",
     }
@@ -578,16 +628,6 @@ def _google_exchange(code: str, verifier: str) -> dict:
         detail = e.read().decode(errors="replace")[:300]
         print(f"[asc] Google token exchange failed: {e.code} {detail}", file=sys.stderr)
         raise RuntimeError("Google didn't accept the sign-in; try again") from None
-
-
-def _new_username(email: str) -> str:
-    base = re.sub(r"[^A-Za-z0-9_.-]", "", email.split("@")[0])[:28] or "player"
-    base = base if len(base) >= 3 else base + "_user"
-    name, n = base, 1
-    while q1("SELECT 1 FROM users WHERE username=?", (name,)):
-        n += 1
-        name = f"{base}{n}"
-    return name
 
 
 @app.get("/api/auth/google/callback")
@@ -625,16 +665,62 @@ def google_callback(request: Request, state: str = "", code: str = "", error: st
     if not user:
         if not GOOGLE_DOMAINS and not row["invite_ok"]:
             return _auth_error("new accounts need the invite code: type it in, then click Sign in with Google")
-        uid = ex("INSERT INTO users (username, pw_hash, created, google_sub, email) VALUES (?,?,?,?,?)",
-                 (_new_username(email), "", time.time(), sub, email))
-    else:
-        uid = user["id"]
-        if user["email"] != email:
-            ex("UPDATE users SET email=? WHERE id=?", (email, uid))
+        # First sign-in: the player picks their own username (it's shown on the scoreboard), so
+        # we don't make one from their email address.
+        ex("DELETE FROM google_signups WHERE created<?", (time.time() - OAUTH_TTL,))
+        token = secrets.token_urlsafe(32)
+        ex("INSERT INTO google_signups VALUES (?,?,?,?,?)", (_token_hash(token), sub, email, hd, time.time()))
+        r = RedirectResponse("/?google_signup=1", status_code=303)
+        r.delete_cookie(OAUTH_COOKIE, path="/api/auth/google")
+        r.set_cookie(SIGNUP_COOKIE, token, max_age=OAUTH_TTL, httponly=True, samesite="lax",
+                     secure=COOKIE_SECURE, path="/api/auth/google")
+        return r
+    uid = user["id"]
+    if user["email"] != email or (user["google_hd"] or "") != hd:
+        ex("UPDATE users SET email=?, google_hd=? WHERE id=?", (email, hd, uid))
     r = RedirectResponse("/", status_code=303)
     r.delete_cookie(OAUTH_COOKIE, path="/api/auth/google")
     start_session(r, uid)
     return r
+
+
+def _pending_signup(request: Request) -> sqlite3.Row:
+    token = request.cookies.get(SIGNUP_COOKIE, "")
+    row = q1("SELECT * FROM google_signups WHERE token_hash=? AND created>?",
+             (_token_hash(token), time.time() - OAUTH_TTL)) if token else None
+    if not row:
+        raise HTTPException(404, "that sign-in expired; click Sign in with Google again")
+    return row
+
+
+@app.get("/api/auth/google/signup")
+def google_signup_info(request: Request):
+    return {"email": _pending_signup(request)["email"]}
+
+
+class GoogleSignup(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+@app.post("/api/auth/google/signup")
+def google_signup(body: GoogleSignup, request: Request, response: Response):
+    if "application/json" not in request.headers.get("content-type", ""):
+        raise HTTPException(415, "send JSON")
+    row = _pending_signup(request)
+    name = _check_new_username(body.username)
+    existing = q1("SELECT id FROM users WHERE google_sub=?", (row["sub"],))   # finished in another tab
+    if existing:
+        uid = existing["id"]
+    else:
+        try:
+            uid = ex("INSERT INTO users (username, pw_hash, created, google_sub, email, google_hd) "
+                     "VALUES (?,?,?,?,?,?)", (name, "", time.time(), row["sub"], row["email"], row["hd"]))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "that username is taken") from None
+    ex("DELETE FROM google_signups WHERE token_hash=?", (row["token_hash"],))
+    response.delete_cookie(SIGNUP_COOKIE, path="/api/auth/google")
+    start_session(response, uid)
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ challenges + attempts

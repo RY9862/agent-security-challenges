@@ -75,7 +75,9 @@ async function route() {
   const signedIn = !!ME.user;
   document.getElementById("nav").hidden = !signedIn;
   document.getElementById("who").hidden = !signedIn;
-  if (!signedIn) return renderAuth();
+  if (!signedIn) {
+    return new URLSearchParams(location.search).get("google_signup") ? renderGoogleSignup() : renderAuth();
+  }
   document.getElementById("who-name").textContent = ME.user.username;
   document.getElementById("nav-admin").hidden = !ME.user.admin;
 
@@ -83,6 +85,7 @@ async function route() {
   try {
     if (parts[0] === "c" && parts[1]) return await renderChallenge(parts[1], parts[3] ? +parts[3] : null);
     if (parts[0] === "scoreboard") return await renderScoreboard();
+    if (parts[0] === "account") return await renderAccount();
     if (parts[0] === "admin" && ME.user.admin) return await renderAdmin();
     return await renderList();
   } catch (e) {
@@ -168,8 +171,84 @@ function renderAuth() {
   } else {
     parts.push(err);
   }
+  parts.push(privacyNote());
   app.replaceChildren(h("div", { class: "auth panel" }, parts));
   if (ME.password_login !== false) user.focus();
+}
+
+function privacyNote() {
+  return h("p", { class: "muted privacy" },
+    "What we keep: your username, and if you use Google, your Google email and account ID (used " +
+    "only to sign you in and to recognise admins; never shown to other players). Your attempts " +
+    "(what you type and how the agent responds), solves and which challenges you open are " +
+    "recorded for research. Your username appears on the scoreboard. You can delete your " +
+    "account and all of this at any time from the Account page.");
+}
+
+// First Google sign-in: the server has checked the Google account and now asks for a username,
+// so we never make one from the person's email address (it would show on the scoreboard).
+async function renderGoogleSignup() {
+  const done = () => { history.replaceState(null, "", location.pathname + location.hash); ME = null; };
+  let info;
+  try { info = await api("/api/auth/google/signup"); } catch (e) {
+    done();
+    history.replaceState(null, "", "/?auth_error=" + encodeURIComponent(e.message));
+    return route();
+  }
+  const err = h("p", { class: "error-text" });
+  const name = h("input", { name: "username", autocomplete: "off", required: true, minLength: 3, maxLength: 32 });
+  const submit = h("button", { class: "primary", type: "submit" }, "Create account");
+  app.replaceChildren(h("div", { class: "auth panel" },
+    h("h1", {}, "Choose a username"),
+    h("p", { class: "muted" }, "Signed in with Google as ", h("b", {}, info.email), "."),
+    h("form", {
+      onsubmit: async (ev) => {
+        ev.preventDefault(); submit.disabled = true; err.textContent = "";
+        try {
+          await api("/api/auth/google/signup", { body: { username: name.value } });
+          done(); route();
+        } catch (e) { err.textContent = e.message; }
+        submit.disabled = false;
+      },
+    },
+      h("div", {}, h("label", {}, "Username"), name),
+      h("p", { class: "muted small" }, "3–32 letters, digits, _ . or -. Other players see it on the " +
+        "scoreboard, so you may not want to use your name or email."),
+      err, submit),
+    privacyNote()));
+  name.focus();
+}
+
+// ---------------------------------------------------------------- account
+
+async function renderAccount() {
+  setNav("account");
+  const u = ME.user;
+  const err = h("p", { class: "error-text" });
+  const confirm = h("input", { name: "confirm", autocomplete: "off", placeholder: u.username });
+  const del = h("button", { type: "submit" }, "Delete my account");
+  app.replaceChildren(
+    h("div", { class: "page-head" }, h("h1", {}, "Account")),
+    h("div", { class: "panel account" },
+      h("dl", {},
+        h("dt", {}, "Username"), h("dd", {}, u.username),
+        h("dt", {}, "Signs in with"), h("dd", {}, u.google ? "Google" : "Username and password"),
+        u.google ? [h("dt", {}, "Google email"), h("dd", {}, u.email, h("span", { class: "muted" }, " (not shown to other players)"))] : null),
+      privacyNote(),
+      h("form", {
+        class: "danger",
+        onsubmit: async (ev) => {
+          ev.preventDefault(); del.disabled = true; err.textContent = "";
+          try {
+            await api("/api/account/delete", { body: { confirm: confirm.value } });
+            ME = null; location.hash = "#/"; route();
+          } catch (e) { err.textContent = e.message; del.disabled = false; }
+        },
+      },
+        h("h2", {}, "Delete account"),
+        h("p", { class: "muted" }, "Removes your account and everything recorded about you: attempts, " +
+          "solves and page views. This can't be undone. Type your username to confirm."),
+        confirm, del, err)));
 }
 
 // ---------------------------------------------------------------- challenge list

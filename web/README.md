@@ -94,9 +94,15 @@ To back up: `docker compose exec web sqlite3 /data/asc.sqlite3 .dump`, or copy t
 ## Sign in with Google (optional)
 
 Players can sign in with any Google account (Gmail, UCI or another school) instead of a
-username and password. The first time someone signs in with Google, the site makes an account
-for them; if `ASC_INVITE_CODE` is set, they type the invite code in the box above the Google
-button that first time. After that, the Google button alone signs them in.
+username and password. The first time someone signs in with Google, they choose a username
+(it's shown on the scoreboard, so it's never made from their email); if `ASC_INVITE_CODE` is
+set, they also type the invite code in the box above the Google button that first time. After
+that, the Google button alone signs them in.
+
+The site asks Google only for `openid email` and stores the account ID (`sub`), the email and
+the Workspace domain (`hd`, empty for Gmail). The email is never shown to other players or put
+in the admin exports. The login page says what is recorded, and players can delete their
+account and all their data from the Account page (click your username, top right).
 
 To allow only some organisations instead (for example only UCI accounts, with no invite code),
 set `ASC_GOOGLE_DOMAINS=uci.edu`. The domain is taken from Google's `hd` claim, which only
@@ -128,9 +134,11 @@ accounts managed by that organisation have, so an `@gmail.com` address can't pas
    to be allowed by them, which is outside this code.
 
 To list admins by Google account, put their email in `ASC_ADMINS`
-(`ASC_ADMINS=you@uci.edu`). That's safer than a username, because usernames can't contain
-`@` and so nobody can claim the email by signing up with a password. To turn off username and
-password sign-in completely, set `ASC_PASSWORD_LOGIN=0`.
+(`ASC_ADMINS=you@gmail.com,prof@uci.edu`). Google accounts are admins only by email, never by
+username, and usernames can't contain `@`, so nobody can claim an admin entry by picking a
+name. A non-Gmail admin email must come from that organisation's Google Workspace (the
+`hd` claim): a personal Google account registered with a `@uci.edu` address doesn't count.
+To turn off username and password sign-in completely, set `ASC_PASSWORD_LOGIN=0`.
 
 Google sign-in uses the authorization-code flow with PKCE. The server swaps the code for the
 ID token directly with Google over HTTPS, then checks the token's audience, issuer, expiry,
@@ -144,7 +152,7 @@ verified email and (if set) domain. No extra Python packages are needed.
 | `ASC_BASE_URL` | NRP | Any OpenAI-compatible endpoint with tool calling |
 | `ASC_MODELS` | `gpt-oss,gemma-small` | Models players can pick; the first is the default |
 | `ASC_INVITE_CODE` / `_FILE` | (none) | Needed to sign up. If empty, anyone can sign up (a warning is logged). |
-| `ASC_ADMINS` | (none) | Comma-separated usernames or Google emails with the Admin page |
+| `ASC_ADMINS` | (none) | Comma-separated Google emails (for Google accounts) or usernames (for password accounts) with the Admin page |
 | `ASC_GOOGLE_CLIENT_ID` | (none) | Turns on Sign in with Google (with the secret below) |
 | `ASC_GOOGLE_CLIENT_SECRET` / `_FILE` | (none) | The OAuth client secret. The file form is preferred. |
 | `ASC_GOOGLE_DOMAINS` | (none) | Empty: any Google account (new accounts need the invite code, if set). Or a list of Workspace domains, e.g. `uci.edu`, to allow only those (no invite code needed). |
@@ -158,12 +166,13 @@ verified email and (if set) domain. No extra Python packages are needed.
 ## Known limits of this prototype
 
 - Passwords have no rules (this is for testing). A username in `ASC_ADMINS` belongs to whoever
-  signs up with it first, so either create those accounts yourself before sharing the invite
-  code, or use Google sign-in and list admins by their UCI email instead.
-
-- No password reset. An admin can delete a user with
-  `sqlite3 /data/asc.sqlite3 "DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username='x')"`
-  and then delete the user's row, or just ask them to make a new account.
+  signs up with a password under it first, so either create those accounts yourself before
+  sharing the invite code, or use Google sign-in and list admins by email instead.
+- A password account and a Google account are separate, even for the same person; there's no
+  linking. Someone switching to Google starts with a new account.
+- No password reset. Players can delete their own account (Account page). An admin can delete
+  one from the server:
+  `docker compose exec web sqlite3 /data/asc.sqlite3 "PRAGMA foreign_keys=ON; DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM views WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM solves WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM attempts WHERE user_id=(SELECT id FROM users WHERE username='x'); DELETE FROM users WHERE username='x';"`
 - Model calls on NRP took 10–45 s each during testing, so a run can take a few minutes. The
   page shows each tool call as it happens, so players aren't watching a blank spinner.
 - Only one instance of the server can run at a time (SQLite and an in-process queue). That
