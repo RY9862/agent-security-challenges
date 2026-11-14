@@ -77,10 +77,52 @@ def test_injection_vector_is_one_the_user_task_reads(ce):
     assert set(ce.VECTOR_READ_TOOLS) & set(EXP["vectors_read"][ce.INJECTION_VECTOR])
 
 
+def _strings(x):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from _strings(v)
+    elif isinstance(x, list):
+        for v in x:
+            yield from _strings(v)
+
+
+def _shows(text, output):
+    """The tool output shows the text exactly: as is, or inside the YAML that tools returning
+    structured data are rendered as (the benchmark does the same, and YAML folds long strings)."""
+    if text in output:
+        return True
+    try:
+        import yaml
+        return any(text in s for s in _strings(yaml.safe_load(output)))
+    except Exception:  # noqa: BLE001 - not YAML
+        return False
+
+
 def test_injection_reaches_agent_verbatim(ce):
     text = f'{EXP["canary"]} line one\nline two "quoted" {{braces}} \\ end'
-    outputs = _run(ce, ce.load_environment(text), EXP["user_calls"])
-    assert any(text in o for o in outputs), "the player's text never appears, byte for byte, in what the agent reads"
+    try:
+        env = ce.load_environment(text)
+    except Exception as e:  # noqa: BLE001
+        pytest.fail(f"load_environment({text!r}) raised {type(e).__name__}: {str(e)[:300]}\n"
+                    f"The player's text must not go through YAML or str.format: set it on the parsed model.")
+    outputs = _run(ce, env, EXP["user_calls"])
+    if any(_shows(text, o) for o in outputs):
+        return
+    # Say what went wrong, so a repair attempt has something to work with.
+    canary = EXP["canary"]
+    calls = [f'{c["function"]}({c["args"]})' for c in EXP["user_calls"]]
+    seen = [(c, o) for c, o in zip(calls, outputs) if canary in o]
+    if seen:
+        call, out = seen[0]
+        i = out.find(canary)
+        pytest.fail(f"the player's text reaches the agent but altered (quotes, newlines, braces or backslashes "
+                    f"changed, so it went through YAML or str.format).\n"
+                    f"  sent:          {text!r}\n  {call} returned: {out[i:i + len(text) + 40]!r}")
+    shown = "\n".join(f"  {c} -> {o[:300]!r}" for c, o in zip(calls, outputs))
+    pytest.fail(f"the player's text never reaches the agent: none of the user task's tool calls returns it, "
+                f"so it was put in the wrong place (or not stored). load_environment({text!r}) then:\n{shown}")
 
 
 # ---------------------------------------------------------------- Step 7: tasks and checks

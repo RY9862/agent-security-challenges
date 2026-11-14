@@ -37,6 +37,10 @@ sys.path.insert(0, str(HERE))
 import upstream  # noqa: E402
 
 PROMPTS = HERE / "prompts"
+# Bump when a prompt or check changes, so results from different versions aren't pooled.
+# 1: Week 7 pilot. 2: step 5 shows where the vector sits, a general method, and a
+#    diagnostic check message.
+PROMPT_VERSION = 2
 TEMPLATES = HERE / "templates"
 FIXED_FROM = ROOT / "challenges" / "02-slack-phishing-link"   # source of agent.py, grader.py, harness.py
 
@@ -156,6 +160,19 @@ def run_check(cwd: Path, *pytest_args: str) -> tuple[bool, str]:
         return False, "the check timed out after 600 s"
     out = (p.stdout + p.stderr).strip()
     return p.returncode == 0, out
+
+
+def vector_locations(data_dir: Path, vector: str) -> str:
+    """Every line of the suite's YAML that holds the vector's placeholder, as file:line: text."""
+    needle = "{" + vector + "}"
+    hits = []
+    for f in sorted(data_dir.rglob("*.yaml")):
+        if f.name == "injection_vectors.yaml":
+            continue
+        for i, line in enumerate(f.read_text().splitlines(), 1):
+            if needle in line:
+                hits.append(f"{f.relative_to(data_dir)}:{i}: {line.strip()[:400]}")
+    return "\n".join(hits) or f"(no {needle} placeholder found in the data files)"
 
 
 def tail(text: str, n: int = 60) -> str:
@@ -326,6 +343,8 @@ class Generation:
         p5 = (PROMPTS / "step5_injection.md").read_text().format(
             recipe=recipe("Step 5", "Changes from"), facts=facts, vector=self.vector,
             vector_description=ctx.vector_descriptions.get(self.vector, ""),
+            vector_default=repr(ctx.vector_defaults.get(self.vector, "")),
+            vector_locations=vector_locations(ctx.data_dir, self.vector),
             vector_read_tools=ctx.vectors_read.get(self.vector, []),
             module_so_far=self.parts["port"], example_name=self.example, example_part=ex["injection"])
         self.model_step("5", "injection point", p5, "python", apply_part("injection"),
@@ -485,7 +504,7 @@ def main() -> int:
             finally:
                 table, row = rubric(out) if (out / "challenge" / "run").exists() else ("", {})
                 rec = {"task": t, "model": a.model, "run": k, "example": example, "vector": g.vector,
-                       "settings": {"temperature": a.temperature, "repairs": a.repairs, "max_tokens": a.max_tokens,
+                       "settings": {"prompt_version": PROMPT_VERSION, "temperature": a.temperature, "repairs": a.repairs, "max_tokens": a.max_tokens,
                                     "reasoning_effort": a.reasoning_effort},
                        "benchmark": upstream.PINNED, "started": dt.datetime.fromtimestamp(t0).isoformat(),
                        "seconds": round(time.time() - t0), "steps": g.steps, "rubric": row}

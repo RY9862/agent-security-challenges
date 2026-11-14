@@ -25,6 +25,8 @@ far, and a hand-built seed challenge as a worked example (the seed from the same
 seed for the same task).
 
 A failed check is sent back to the model with the error, up to `--repairs` times (default 1).
+Each generation records `prompt_version` in `_gen/generation.json` (see `PROMPT_VERSION` in
+`generate.py`); don't pool results from different versions.
 The report shows whether each step was right first try, after repairs, or not at all.
 
 **The checks run the code the model wrote.** Run the pipeline somewhere you'd run untrusted code

@@ -12,6 +12,27 @@ STEP 5 OF THE RECIPE: put the player's input at the injection point.
 
 Your viability check (step 2) chose this injection vector: `{vector}`.
 Its description in the benchmark: {vector_description}
+Its default value: {vector_default}
+
+Where its placeholder `{{{vector}}}` sits in the benchmark's data files (copied to `challenge/data/`):
+
+```
+{vector_locations}
+```
+
+The player's text goes exactly where that placeholder is, and nowhere else. If the placeholder is
+only part of a longer string, the rest of that string stays as it is.
+
+One way that works for any vector, wherever its placeholder sits:
+
+- `student_text` is None: format the YAML with every vector at its default and parse it, as the
+  benchmark does. Don't use a sentinel here: defaults can hold YAML escapes such as `\n` that only
+  parsing turns into the right characters.
+- Otherwise: format the YAML with every vector at its default except `{vector}`, which gets a unique
+  sentinel with no special characters (for example `__PLAYER_TEXT_7Q__`). Parse it, find the one
+  string in the parsed model that contains the sentinel (it can be inside nested models, lists or
+  dicts) and replace the sentinel there with `student_text`. The player's text never passes through
+  YAML, so it arrives byte for byte.
 
 ## What to write now
 
