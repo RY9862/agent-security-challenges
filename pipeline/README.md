@@ -29,6 +29,8 @@ Each generation records `prompt_version` in `_gen/generation.json` (see `PROMPT_
 `generate.py`); don't pool results from different versions. After a check is fixed,
 `python3 pipeline/recheck.py <folder>` re-runs the current tests on challenges already generated,
 and `report.py` then shows the result in a Recheck column and a per-model table.
+`python3 pipeline/sample.py pick|bundle|real <folder>` picks one working challenge per model and
+task, bundles them for rubric scoring, and runs them on a real model (rubric 1A.6 and 1A.7).
 The report shows whether each step was right first try, after repairs, or not at all.
 
 **The checks run the code the model wrote.** Run the pipeline somewhere you'd run untrusted code
