@@ -26,7 +26,9 @@ seed for the same task).
 
 A failed check is sent back to the model with the error, up to `--repairs` times (default 1).
 Each generation records `prompt_version` in `_gen/generation.json` (see `PROMPT_VERSION` in
-`generate.py`); don't pool results from different versions.
+`generate.py`); don't pool results from different versions. After a check is fixed,
+`python3 pipeline/recheck.py <folder>` re-runs the current tests on challenges already generated,
+and `report.py` then shows the result in a Recheck column and a per-model table.
 The report shows whether each step was right first try, after repairs, or not at all.
 
 **The checks run the code the model wrote.** Run the pipeline somewhere you'd run untrusted code

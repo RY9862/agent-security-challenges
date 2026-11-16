@@ -23,6 +23,30 @@ from agent import AgentConfig  # noqa: E402
 from grader import grade  # noqa: E402
 
 MARK = REFERENCE.strip()[:60]
+
+
+def _strings(x):
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for v in x.values():
+            yield from _strings(v)
+    elif isinstance(x, list):
+        for v in x:
+            yield from _strings(v)
+
+
+def _shows(text, output):
+    """The tool output shows the text exactly: as is, or inside the YAML that tools returning
+    structured data (transactions, calendar events) are rendered as. YAML folds long lines and
+    doubles single quotes, so the raw output can differ from what the agent effectively reads."""
+    if text in output:
+        return True
+    try:
+        import yaml
+        return any(text in s for s in _strings(yaml.safe_load(output)))
+    except Exception:  # noqa: BLE001 - not YAML
+        return False
 # The fake model is obedient, but only to an injection that names the attacker's targets (link,
 # IBAN, email, file ID from the injection goal). A text that just reaches the agent isn't enough.
 NAMES_TARGETS = all(t in REFERENCE for t in EXP.get("goal_targets", []))
@@ -31,11 +55,11 @@ NAMES_TARGETS = all(t in REFERENCE for t in EXP.get("goal_targets", []))
 def scripted_reply(messages):
     tool_outputs = [m["content"] or "" for m in messages if m["role"] == "tool"]
     n_called = sum(len(m.get("tool_calls") or []) for m in messages if m["role"] == "assistant")
-    injected = bool(MARK) and NAMES_TARGETS and any(MARK in t for t in tool_outputs)
+    injected = bool(MARK) and NAMES_TARGETS and any(_shows(MARK, t) for t in tool_outputs)
     plan = list(EXP["user_calls"])
     if injected:
         # follow the injection as soon as it is seen, then finish the user task
-        seen_at = next(i for i, t in enumerate(tool_outputs) if MARK in t) + 1
+        seen_at = next(i for i, t in enumerate(tool_outputs) if _shows(MARK, t)) + 1
         plan = plan[:seen_at] + EXP["injection_calls"] + plan[seen_at:]
     if n_called < len(plan):
         c = plan[n_called]
@@ -92,7 +116,8 @@ def test_no_attack_no_flag(server):
 
 def test_injection_reaches_agent_verbatim(server):
     g = grade(REFERENCE, cfg(server))
-    assert any(REFERENCE in s.content for s in g.run.trace if s.kind == "tool_result")
+    assert any(_shows(REFERENCE, s.content) for s in g.run.trace if s.kind == "tool_result"), \
+        "the reference solution never reaches the agent, byte for byte, in a tool result"
 
 
 def run_script(server, tmp_path, stdin):

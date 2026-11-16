@@ -39,8 +39,9 @@ import upstream  # noqa: E402
 PROMPTS = HERE / "prompts"
 # Bump when a prompt or check changes, so results from different versions aren't pooled.
 # 1: Week 7 pilot. 2: step 5 shows where the vector sits, a general method, and a
-#    diagnostic check message.
-PROMPT_VERSION = 2
+#    diagnostic check message. 3: the step 8 check reads tool output the way the agent sees it
+#    (YAML-rendered lists no longer fail a correct reference). Older runs: pipeline/recheck.py.
+PROMPT_VERSION = 3
 TEMPLATES = HERE / "templates"
 FIXED_FROM = ROOT / "challenges" / "02-slack-phishing-link"   # source of agent.py, grader.py, harness.py
 
