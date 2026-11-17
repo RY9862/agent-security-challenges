@@ -100,6 +100,11 @@ def real(root: Path, model: str, runs: int, extra: list[str]):
     base = os.environ.get("BASE_URL") or os.environ.get("OPENAI_BASE_URL")
     if not base:
         sys.exit("no BASE_URL: run `source scripts/use-nrp.sh` first")
+    try:
+        import openai  # noqa: F401  - each harness needs it; fail here, not 16 times
+    except ImportError:
+        sys.exit(f"{sys.executable} has no 'openai' package: run `source .venv/bin/activate` first")
+    root = root.resolve()   # each harness runs from its own folder, so paths must be absolute
     rows = load_sample(root)
     out_root = root / "_real" / model.replace("/", "_").replace(":", "_")
     table = []
@@ -109,8 +114,10 @@ def real(root: Path, model: str, runs: int, extra: list[str]):
         done = [t for t in sorted(out.glob("*.tsv")) if sum(1 for _ in t.open()) - 1 >= 2 * runs]
         if not done:
             print(f"\n[{n}/{len(rows)}] {x['model']} {x['task']} ({x['folder']}) on {model}", flush=True)
-            subprocess.run([sys.executable, str(ch / "harness.py"), "--model", model, "--base-url", base,
-                            "--runs", str(runs), "--out", str(out)] + extra, cwd=ch)
+            p = subprocess.run([sys.executable, str(ch / "harness.py"), "--model", model, "--base-url", base,
+                                "--runs", str(runs), "--out", str(out)] + extra, cwd=ch)
+            if p.returncode not in (0, 1):   # 1 = ran, but missed the acceptance bar
+                print(f"  harness exited with code {p.returncode}; see the error above", flush=True)
             done = [t for t in sorted(out.glob("*.tsv")) if sum(1 for _ in t.open()) - 1 >= 2 * runs]
         else:
             print(f"[{n}/{len(rows)}] {x['folder']}: already done, skipped", flush=True)
