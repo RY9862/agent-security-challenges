@@ -1,0 +1,17 @@
+rater	task	generated_by	folder (in generated-wk8/)	1B grader (0-3/N/A/CD)	2 context	3 coherence	4 pedagogy	notes
+	banking:user_task_0:injection_task_6	gemma-small	gemma-small/banking-u0-i6/run-1					
+	banking:user_task_0:injection_task_6	gpt-oss	gpt-oss/banking-u0-i6/run-1					
+	banking:user_task_0:injection_task_6	kimi	kimi/banking-u0-i6/run-1					
+	banking:user_task_0:injection_task_6	qwen3	qwen3/banking-u0-i6/run-1					
+	banking:user_task_1:injection_task_4	gemma-small	gemma-small/banking-u1-i4/run-1					
+	banking:user_task_1:injection_task_4	gpt-oss	gpt-oss/banking-u1-i4/run-1					
+	banking:user_task_1:injection_task_4	kimi	kimi/banking-u1-i4/run-1					
+	banking:user_task_1:injection_task_4	qwen3	qwen3/banking-u1-i4/run-1-20261115-220820					
+	slack:user_task_2:injection_task_3	gemma-small	gemma-small/slack-u2-i3/run-1					
+	slack:user_task_2:injection_task_3	gpt-oss	gpt-oss/slack-u2-i3/run-1					
+	slack:user_task_2:injection_task_3	kimi	kimi/slack-u2-i3/run-1					
+	slack:user_task_2:injection_task_3	qwen3	qwen3/slack-u2-i3/run-1-20261115-210208					
+	workspace:user_task_0:injection_task_3	gemma-small	gemma-small/workspace-u0-i3/run-1					
+	workspace:user_task_0:injection_task_3	gpt-oss	gpt-oss/workspace-u0-i3/run-1					
+	workspace:user_task_0:injection_task_3	kimi	kimi/workspace-u0-i3/run-1					
+	workspace:user_task_0:injection_task_3	qwen3	qwen3/workspace-u0-i3/run-2					

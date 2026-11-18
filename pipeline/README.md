@@ -31,6 +31,8 @@ Each generation records `prompt_version` in `_gen/generation.json` (see `PROMPT_
 and `report.py` then shows the result in a Recheck column and a per-model table.
 `python3 pipeline/sample.py pick|bundle|real <folder>` picks one working challenge per model and
 task, bundles them for rubric scoring, and runs them on a real model (rubric 1A.6 and 1A.7).
+`--screen-model gpt-oss` (prompt version 4) also runs each reference 3 times on a real model during
+step 8 and sends the agent's tool calls back to the generating model when it gets under 2 of 3 flags.
 The report shows whether each step was right first try, after repairs, or not at all.
 
 **The checks run the code the model wrote.** Run the pipeline somewhere you'd run untrusted code
